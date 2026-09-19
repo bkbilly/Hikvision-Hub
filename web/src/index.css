@@ -7,6 +7,45 @@ body {
   user-select: none;
 }
 
+/* Ensure interactive controls display the pointer / hand cursor */
+button:not(:disabled),
+[role="button"]:not(:disabled),
+select:not(:disabled),
+input[type="checkbox"]:not(:disabled),
+input[type="radio"]:not(:disabled),
+input[type="range"]:not(:disabled),
+input[type="submit"]:not(:disabled),
+input[type="button"]:not(:disabled),
+a,
+summary,
+.clickable,
+.cursor-pointer {
+  cursor: pointer;
+}
+
+/* Disabled state */
+button:disabled,
+[role="button"][aria-disabled="true"],
+input:disabled,
+select:disabled,
+.cursor-not-allowed {
+  cursor: not-allowed;
+}
+
+/* Text editing inputs */
+input[type="text"],
+input[type="password"],
+input[type="number"],
+input[type="email"],
+input[type="search"],
+input[type="url"],
+textarea,
+[contenteditable="true"],
+.cursor-text {
+  cursor: text;
+  user-select: text;
+}
+
 /* Custom smooth dark scrollbar */
 ::-webkit-scrollbar {
   width: 6px;

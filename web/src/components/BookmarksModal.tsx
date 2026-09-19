@@ -68,10 +68,10 @@ export const BookmarksModal: React.FC<BookmarksModalProps> = ({
   };
 
   return (
-    <div className="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-center justify-center p-3 sm:p-4 overflow-y-auto select-none">
-      <div className="relative w-full max-w-2xl glass-panel bg-slate-950 rounded-2xl border border-slate-800 shadow-2xl overflow-hidden my-auto max-h-[85vh] flex flex-col">
+    <div className="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-start justify-center p-3 sm:p-4 overflow-y-auto select-none">
+      <div className="relative w-full max-w-2xl glass-panel bg-slate-950 rounded-2xl border border-slate-800 shadow-2xl overflow-hidden my-auto max-h-[calc(100dvh-1.5rem)] sm:max-h-[calc(100dvh-2rem)] flex flex-col">
         {/* Header */}
-        <div className="flex items-center justify-between px-5 py-4 border-b border-slate-800 bg-slate-900/60">
+        <div className="flex items-center justify-between px-5 py-4 border-b border-slate-800 bg-slate-900/60 shrink-0">
           <div className="flex items-center gap-2.5">
             <div className="w-8 h-8 rounded-lg bg-amber-500/20 border border-amber-500/30 flex items-center justify-center text-amber-400">
               <BookmarkIcon className="w-4 h-4 fill-current" />
@@ -90,7 +90,7 @@ export const BookmarksModal: React.FC<BookmarksModalProps> = ({
         </div>
 
         {/* Content */}
-        <div className="p-4 sm:p-5 overflow-y-auto flex-1 space-y-3">
+        <div className="p-4 sm:p-5 overflow-y-auto flex-1 min-h-0 space-y-3">
           {bookmarks.length === 0 ? (
             <div className="py-12 text-center bg-slate-900/40 rounded-xl border border-dashed border-slate-800 space-y-2">
               <BookmarkIcon className="w-8 h-8 text-slate-600 mx-auto" />

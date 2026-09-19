@@ -1,0 +1,642 @@
+import React, { useState, useEffect, useRef } from 'react';
+import type {
+  Camera,
+  CameraCapabilities,
+  DeviceInfo,
+  DeviceTime,
+  HddInfo,
+  ImageSettings,
+  NTPServer,
+  PTZPreset,
+  StreamSettings,
+} from '../types';
+import { api } from '../api';
+import {
+  X,
+  Camera as CameraIcon,
+  Clock,
+  Sun,
+  Video,
+  Shield,
+  HardDrive,
+  Terminal,
+  CheckCircle,
+  AlertCircle,
+  RefreshCw,
+  Navigation,
+  Info,
+} from 'lucide-react';
+
+import { DeviceTab } from './camera-settings/DeviceTab';
+import { TimeTab } from './camera-settings/TimeTab';
+import { ImageTab } from './camera-settings/ImageTab';
+import { VideoTab } from './camera-settings/VideoTab';
+import { EventsTab } from './camera-settings/events/EventsTab';
+import { StorageTab } from './camera-settings/StorageTab';
+import { PtzTab } from './camera-settings/PtzTab';
+import { RawIsapiTab } from './camera-settings/RawIsapiTab';
+
+interface CameraSettingsModalProps {
+  isOpen: boolean;
+  onClose: () => void;
+  camera: Camera | null;
+}
+
+type TabType = 'device' | 'time' | 'image' | 'video' | 'events' | 'storage' | 'ptz' | 'raw';
+
+export const CameraSettingsModal: React.FC<CameraSettingsModalProps> = ({
+  isOpen,
+  onClose,
+  camera,
+}) => {
+  const [activeTab, setActiveTab] = useState<TabType>('device');
+  const [isLoading, setIsLoading] = useState<boolean>(false);
+  const [saveStatus, setSaveStatus] = useState<{ success: boolean; message: string } | null>(null);
+
+  // Snapshot preview trigger
+  const [snapshotKey, setSnapshotKey] = useState<number>(Date.now());
+
+  // Capabilities
+  const [capabilities, setCapabilities] = useState<CameraCapabilities | null>(null);
+
+  // Device Info
+  const [deviceInfo, setDeviceInfo] = useState<DeviceInfo | null>(null);
+  const [isRebooting, setIsRebooting] = useState<boolean>(false);
+
+  // Time & NTP
+  const [deviceTime, setDeviceTime] = useState<DeviceTime | null>(null);
+  const [ntpServer, setNtpServer] = useState<NTPServer | null>(null);
+  const [isSyncingTime, setIsSyncingTime] = useState<boolean>(false);
+  const [timeMode, setTimeMode] = useState<'manual' | 'NTP'>('manual');
+
+  // Image Settings
+  const [imageSettings, setImageSettings] = useState<ImageSettings | null>(null);
+  const [isSavingImage, setIsSavingImage] = useState<boolean>(false);
+
+  // Video Streams (101 Main, 102 Sub)
+  const [streamChannel, setStreamChannel] = useState<101 | 102>(101);
+  const [mainStream, setMainStream] = useState<StreamSettings | null>(null);
+  const [subStream, setSubStream] = useState<StreamSettings | null>(null);
+
+  // Storage
+  const [storageList, setStorageList] = useState<HddInfo[]>([]);
+  const [formattingId, setFormattingId] = useState<number | null>(null);
+  const [isRefreshingStorage, setIsRefreshingStorage] = useState<boolean>(false);
+
+  // PTZ
+  const [ptzPresets, setPtzPresets] = useState<PTZPreset[]>([]);
+
+  // Events tab refresh ref & key
+  const [refreshKey, setRefreshKey] = useState<number>(Date.now());
+  const eventsRefreshRef = useRef<(() => Promise<void>) | null>(null);
+
+  // Raw ISAPI Console
+  const [rawPath, setRawPath] = useState<string>('/ISAPI/System/deviceInfo');
+  const [rawMethod, setRawMethod] = useState<'GET' | 'PUT' | 'POST'>('GET');
+  const [rawBody, setRawBody] = useState<string>('');
+  const [rawResult, setRawResult] = useState<string>('');
+  const [rawLoading, setRawLoading] = useState<boolean>(false);
+
+  useEffect(() => {
+    if (isOpen && camera) {
+      loadAllCameraData();
+    } else {
+      setSaveStatus(null);
+    }
+  }, [isOpen, camera]);
+
+  const refreshPreview = () => {
+    setSnapshotKey(Date.now());
+  };
+
+  const loadAllCameraData = async () => {
+    if (!camera) return;
+    setIsLoading(true);
+    setSaveStatus(null);
+
+    // Refresh preview snapshot timestamp for image/events tabs
+    refreshPreview();
+    const newRefreshKey = Date.now();
+    setRefreshKey(newRefreshKey);
+
+    const promises: Promise<any>[] = [
+      // 1. Probe Capabilities
+      api.getCameraCapabilities(camera.id)
+        .then((caps) => { if (caps) setCapabilities(caps); })
+        .catch((err) => console.warn('capabilities error', err)),
+
+      // 2. Fetch Device Info
+      api.getCameraDeviceInfo(camera.id)
+        .then((res) => setDeviceInfo(res))
+        .catch((err) => console.warn('device info error', err)),
+
+      // 3. Fetch Time & NTP
+      api.getCameraTime(camera.id)
+        .then((res) => {
+          setDeviceTime(res);
+          if (res.time_mode === 'NTP') setTimeMode('NTP');
+          else setTimeMode('manual');
+        })
+        .catch((err) => console.warn('time error', err)),
+
+      api.getCameraNTP(camera.id)
+        .then((res) => setNtpServer(res))
+        .catch((err) => console.warn('ntp error', err)),
+
+      // 4. Fetch Image Settings
+      api.getCameraImage(camera.id)
+        .then((res) => setImageSettings(res))
+        .catch((err) => {
+          console.warn('image error', err);
+          setImageSettings((prev) => prev || {
+            channel_id: 1,
+            brightness: 50,
+            contrast: 50,
+            saturation: 50,
+            sharpness: 50,
+            ircut_filter_type: 'auto',
+            wdr_mode: 'close',
+            wdr_level: 50,
+            image_flip_style: 'OFF',
+            white_balance: 'auto',
+            noise_reduce_level: 50,
+            exposure_mode: 'auto',
+          });
+        }),
+
+      // 5. Fetch Streams
+      api.getCameraStream(camera.id, 101)
+        .then((res) => setMainStream(res))
+        .catch((err) => console.warn('stream 101 error', err)),
+
+      api.getCameraStream(camera.id, 102)
+        .then((res) => setSubStream(res))
+        .catch((err) => console.warn('stream 102 error', err)),
+
+      // 6. Fetch Storage
+      api.getCameraStorage(camera.id)
+        .then((res) => setStorageList(res || []))
+        .catch(() => setStorageList([])),
+
+      // 7. Fetch PTZ presets if supported
+      api.getPTZPresets(camera.id)
+        .then((res) => setPtzPresets(res || []))
+        .catch(() => setPtzPresets([])),
+    ];
+
+    // 8. If Events tab is currently mounted, also trigger and await its refresh!
+    if (eventsRefreshRef.current) {
+      promises.push(eventsRefreshRef.current().catch((err) => console.warn('events refresh error', err)));
+    }
+
+    try {
+      await Promise.allSettled(promises);
+    } catch (err: any) {
+      console.error('Failed to load camera configuration', err);
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  // Handlers for Save Operations
+  const handleSyncTime = async () => {
+    if (!camera) return;
+    setIsSyncingTime(true);
+    setSaveStatus(null);
+    try {
+      const now = new Date();
+      const localIso = new Date(now.getTime() - now.getTimezoneOffset() * 60000).toISOString().slice(0, 19);
+      const res = await api.syncCameraTime(camera.id, {
+        client_time: localIso,
+        timezone: '', // Let backend preserve camera's native timezone format to prevent 400 rejection
+      });
+      setSaveStatus({ success: true, message: res.message });
+      const updatedTime = await api.getCameraTime(camera.id);
+      setDeviceTime(updatedTime);
+    } catch (err: any) {
+      setSaveStatus({ success: false, message: err.message || 'Time sync failed' });
+    } finally {
+      setIsSyncingTime(false);
+    }
+  };
+
+  const handleSaveNTP = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!camera || !ntpServer) return;
+    try {
+      const res = await api.setCameraNTP(camera.id, ntpServer);
+      // Also switch the camera's timeMode to NTP
+      await api.setCameraTime(camera.id, { time_mode: 'NTP', local_time: '', time_zone: deviceTime?.time_zone || '' });
+      setTimeMode('NTP');
+      setSaveStatus({ success: true, message: res.message });
+    } catch (err: any) {
+      setSaveStatus({ success: false, message: err.message || 'NTP save failed' });
+    }
+  };
+
+  const handleSwitchTimeMode = async (newMode: 'manual' | 'NTP') => {
+    if (!camera || !deviceTime) return;
+    setSaveStatus(null);
+    try {
+      if (newMode === 'NTP') {
+        // Save NTP server config if we have one, then switch mode
+        if (ntpServer) {
+          await api.setCameraNTP(camera.id, ntpServer);
+        }
+        await api.setCameraTime(camera.id, { time_mode: 'NTP', local_time: '', time_zone: deviceTime.time_zone || '' });
+      } else {
+        // Switch to manual — sync current browser time
+        const now = new Date();
+        const localIso = new Date(now.getTime() - now.getTimezoneOffset() * 60000).toISOString().slice(0, 19);
+        await api.setCameraTime(camera.id, { time_mode: 'manual', local_time: localIso, time_zone: deviceTime.time_zone || '' });
+      }
+      setTimeMode(newMode);
+      const updatedTime = await api.getCameraTime(camera.id);
+      setDeviceTime(updatedTime);
+      setSaveStatus({ success: true, message: `Time mode switched to ${newMode === 'NTP' ? 'NTP' : 'Manual'} successfully` });
+    } catch (err: any) {
+      setSaveStatus({ success: false, message: err.message || 'Failed to switch time mode' });
+    }
+  };
+
+  const handleSaveImage = async (e?: React.FormEvent) => {
+    if (e) e.preventDefault();
+    if (!camera || !imageSettings) return;
+    setIsSavingImage(true);
+    setSaveStatus(null);
+    try {
+      const res = await api.setCameraImage(camera.id, imageSettings);
+      setSaveStatus({ success: true, message: res.message });
+      // Immediately refresh preview and again after delay for hardware exposure to settle
+      refreshPreview();
+      setTimeout(refreshPreview, 1000);
+      setTimeout(refreshPreview, 2500);
+      // Fetch latest values to keep in sync with camera adjustments
+      api.getCameraImage(camera.id)
+        .then((updated) => setImageSettings(updated))
+        .catch(() => {});
+    } catch (err: any) {
+      setSaveStatus({ success: false, message: err.message || 'Failed to save image settings' });
+    } finally {
+      setIsSavingImage(false);
+    }
+  };
+
+  const handleSaveStream = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!camera) return;
+    const targetStream = streamChannel === 101 ? mainStream : subStream;
+    if (!targetStream) return;
+    try {
+      const res = await api.setCameraStream(camera.id, streamChannel, targetStream);
+      setSaveStatus({ success: true, message: res.message });
+    } catch (err: any) {
+      setSaveStatus({ success: false, message: err.message || 'Failed to save stream' });
+    }
+  };
+
+  const handleReboot = async () => {
+    if (!camera) return;
+    if (!confirm(`Are you sure you want to reboot '${camera.name}'? The camera will be offline for about 60 seconds.`)) {
+      return;
+    }
+    setIsRebooting(true);
+    try {
+      const res = await api.rebootCamera(camera.id);
+      setSaveStatus({ success: true, message: res.message });
+    } catch (err: any) {
+      setSaveStatus({ success: false, message: err.message || 'Reboot failed' });
+    } finally {
+      setIsRebooting(false);
+    }
+  };
+
+  const handleExecuteFormat = async (hddId: number) => {
+    if (!camera) return;
+    setFormattingId(hddId);
+    setSaveStatus(null);
+    try {
+      const res = await api.formatCameraStorage(camera.id, hddId);
+      setSaveStatus({ success: true, message: res.message || 'Format initiated successfully' });
+      setTimeout(handleRefreshStorage, 3000);
+    } catch (err: any) {
+      setSaveStatus({ success: false, message: err.message || 'Format failed' });
+    } finally {
+      setFormattingId(null);
+    }
+  };
+
+  const handleRefreshStorage = async () => {
+    if (!camera) return;
+    setIsRefreshingStorage(true);
+    try {
+      const list = await api.getCameraStorage(camera.id);
+      setStorageList(list || []);
+    } catch (err: any) {
+      console.warn('Storage refresh error', err);
+    } finally {
+      setIsRefreshingStorage(false);
+    }
+  };
+
+  const handlePTZMove = async (pan: number, tilt: number, zoom: number) => {
+    if (!camera) return;
+    try {
+      await api.ptzControl(camera.id, { pan, tilt, zoom });
+    } catch (err: any) {
+      console.warn('PTZ error', err);
+    }
+  };
+
+  const handlePTZGoto = async (presetId: number) => {
+    if (!camera) return;
+    try {
+      await api.ptzGoto(camera.id, presetId);
+      setSaveStatus({ success: true, message: `Moving to preset #${presetId}` });
+    } catch (err: any) {
+      setSaveStatus({ success: false, message: err.message || 'PTZ Goto failed' });
+    }
+  };
+
+  const handleExecuteRaw = async () => {
+    if (!camera || !rawPath) return;
+    setRawLoading(true);
+    setRawResult('');
+    try {
+      const res = await api.proxyISAPI(
+        camera.id,
+        rawPath,
+        rawMethod,
+        rawMethod !== 'GET' ? rawBody : undefined
+      );
+      setRawResult(res.data || 'Success (empty response)');
+    } catch (err: any) {
+      setRawResult(`Error: ${err.message || err}`);
+    } finally {
+      setRawLoading(false);
+    }
+  };
+
+  if (!isOpen || !camera) return null;
+
+  return (
+    <div className="fixed inset-0 z-50 bg-black/85 backdrop-blur-md overflow-y-auto">
+      <div className="flex min-h-full items-start justify-center p-2 sm:p-4">
+        <div className="relative w-full max-w-5xl glass-panel bg-slate-950 rounded-2xl border border-slate-800 shadow-2xl flex flex-col my-auto">
+          {/* Header */}
+          <div className="flex items-center justify-between px-4 sm:px-6 py-3.5 border-b border-slate-800 bg-slate-900/80 rounded-t-2xl shrink-0">
+            <div className="flex items-center gap-3">
+              <div className="p-2 rounded-xl bg-blue-500/10 border border-blue-500/20 text-blue-400">
+                <CameraIcon className="w-5 h-5" />
+              </div>
+              <div>
+                <div className="flex items-center gap-2">
+                  <h2 className="font-bold text-base sm:text-lg text-white">{camera.name}</h2>
+                  <span className="px-2 py-0.5 rounded-full text-[11px] font-medium bg-emerald-500/10 border border-emerald-500/20 text-emerald-400">
+                    ISAPI Connected
+                  </span>
+                </div>
+                <p className="text-xs text-slate-400 font-mono">{camera.ip}</p>
+              </div>
+            </div>
+
+            <div className="flex items-center gap-2">
+              <button
+                onClick={loadAllCameraData}
+                disabled={isLoading}
+                title="Refresh Camera Configuration"
+                className="p-2 rounded-lg text-slate-400 hover:text-white hover:bg-slate-800 transition-colors cursor-pointer"
+              >
+                <RefreshCw className={`w-4 h-4 ${isLoading ? 'animate-spin text-blue-400' : ''}`} />
+              </button>
+              <button
+                onClick={onClose}
+                className="p-2 rounded-lg text-slate-400 hover:text-white hover:bg-slate-800 transition-colors cursor-pointer"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+          </div>
+
+          {/* Global Save / Feedback Alert */}
+          {saveStatus && (
+            <div
+              className={`px-4 sm:px-6 py-2.5 text-xs sm:text-sm font-medium flex items-center justify-between border-b shrink-0 ${
+                saveStatus.success
+                  ? 'bg-emerald-950/70 border-emerald-800 text-emerald-300'
+                  : 'bg-rose-950/70 border-rose-800 text-rose-300'
+              }`}
+            >
+              <div className="flex items-center gap-2">
+                {saveStatus.success ? <CheckCircle className="w-4 h-4" /> : <AlertCircle className="w-4 h-4" />}
+                <span>{saveStatus.message}</span>
+              </div>
+              <button onClick={() => setSaveStatus(null)} className="text-xs opacity-75 hover:opacity-100 cursor-pointer">
+                Dismiss
+              </button>
+            </div>
+          )}
+
+          {/* Main Content Layout: Tabs + Body */}
+          <div className="flex flex-col md:flex-row" style={{ minHeight: '480px' }}>
+            {/* Vertical / Horizontal Navigation */}
+            <div className="w-full md:w-56 border-b md:border-b-0 md:border-r border-slate-800 bg-slate-900/40 p-2 md:p-3 flex md:flex-col gap-1 overflow-x-auto md:overflow-x-hidden shrink-0">
+              <button
+                onClick={() => { setActiveTab('device'); setSaveStatus(null); }}
+                className={`flex items-center gap-2.5 px-3 py-2.5 rounded-xl text-xs sm:text-sm font-medium transition-all whitespace-nowrap text-left cursor-pointer ${
+                  activeTab === 'device'
+                    ? 'bg-blue-600/20 text-blue-400 border border-blue-500/30 font-semibold'
+                    : 'text-slate-400 hover:text-slate-200 hover:bg-slate-800/60 border border-transparent'
+                }`}
+              >
+                <Info className="w-4 h-4 shrink-0" />
+                <span>Device</span>
+              </button>
+
+              <button
+                onClick={() => { setActiveTab('time'); setSaveStatus(null); }}
+                className={`flex items-center gap-2.5 px-3 py-2.5 rounded-xl text-xs sm:text-sm font-medium transition-all whitespace-nowrap text-left cursor-pointer ${
+                  activeTab === 'time'
+                    ? 'bg-blue-600/20 text-blue-400 border border-blue-500/30 font-semibold'
+                    : 'text-slate-400 hover:text-slate-200 hover:bg-slate-800/60 border border-transparent'
+                }`}
+              >
+                <Clock className="w-4 h-4 shrink-0" />
+                <span>Time</span>
+              </button>
+
+              <button
+                onClick={() => { setActiveTab('image'); setSaveStatus(null); }}
+                className={`flex items-center gap-2.5 px-3 py-2.5 rounded-xl text-xs sm:text-sm font-medium transition-all whitespace-nowrap text-left cursor-pointer ${
+                  activeTab === 'image'
+                    ? 'bg-blue-600/20 text-blue-400 border border-blue-500/30 font-semibold'
+                    : 'text-slate-400 hover:text-slate-200 hover:bg-slate-800/60 border border-transparent'
+                }`}
+              >
+                <Sun className="w-4 h-4 shrink-0" />
+                <span>Image</span>
+              </button>
+
+              <button
+                onClick={() => { setActiveTab('video'); setSaveStatus(null); }}
+                className={`flex items-center gap-2.5 px-3 py-2.5 rounded-xl text-xs sm:text-sm font-medium transition-all whitespace-nowrap text-left cursor-pointer ${
+                  activeTab === 'video'
+                    ? 'bg-blue-600/20 text-blue-400 border border-blue-500/30 font-semibold'
+                    : 'text-slate-400 hover:text-slate-200 hover:bg-slate-800/60 border border-transparent'
+                }`}
+              >
+                <Video className="w-4 h-4 shrink-0" />
+                <span>Streams</span>
+              </button>
+
+              <button
+                onClick={() => { setActiveTab('events'); setSaveStatus(null); }}
+                className={`flex items-center gap-2.5 px-3 py-2.5 rounded-xl text-xs sm:text-sm font-medium transition-all whitespace-nowrap text-left cursor-pointer ${
+                  activeTab === 'events'
+                    ? 'bg-blue-600/20 text-blue-400 border border-blue-500/30 font-semibold'
+                    : 'text-slate-400 hover:text-slate-200 hover:bg-slate-800/60 border border-transparent'
+                }`}
+              >
+                <Shield className="w-4 h-4 shrink-0" />
+                <span>Events</span>
+              </button>
+
+              <button
+                onClick={() => { setActiveTab('storage'); setSaveStatus(null); }}
+                className={`flex items-center gap-2.5 px-3 py-2.5 rounded-xl text-xs sm:text-sm font-medium transition-all whitespace-nowrap text-left cursor-pointer ${
+                  activeTab === 'storage'
+                    ? 'bg-blue-600/20 text-blue-400 border border-blue-500/30 font-semibold'
+                    : 'text-slate-400 hover:text-slate-200 hover:bg-slate-800/60 border border-transparent'
+                }`}
+              >
+                <HardDrive className="w-4 h-4 shrink-0" />
+                <span>Storage</span>
+              </button>
+
+              {capabilities?.has_ptz && (
+                <button
+                  onClick={() => { setActiveTab('ptz'); setSaveStatus(null); }}
+                  className={`flex items-center gap-2.5 px-3 py-2.5 rounded-xl text-xs sm:text-sm font-medium transition-all whitespace-nowrap text-left cursor-pointer ${
+                    activeTab === 'ptz'
+                      ? 'bg-blue-600/20 text-blue-400 border border-blue-500/30 font-semibold'
+                      : 'text-slate-400 hover:text-slate-200 hover:bg-slate-800/60 border border-transparent'
+                  }`}
+                >
+                  <Navigation className="w-4 h-4 shrink-0" />
+                  <span>PTZ</span>
+                </button>
+              )}
+
+              <button
+                onClick={() => { setActiveTab('raw'); setSaveStatus(null); }}
+                className={`flex items-center gap-2.5 px-3 py-2.5 rounded-xl text-xs sm:text-sm font-medium transition-all whitespace-nowrap text-left cursor-pointer ${
+                  activeTab === 'raw'
+                    ? 'bg-blue-600/20 text-blue-400 border border-blue-500/30 font-semibold'
+                    : 'text-slate-400 hover:text-slate-200 hover:bg-slate-800/60 border border-transparent'
+                }`}
+              >
+                <Terminal className="w-4 h-4 shrink-0" />
+                <span>Console</span>
+              </button>
+            </div>
+
+            {/* Active Tab Body */}
+            <div className="flex-1 p-4 sm:p-6 overflow-y-auto" style={{ maxHeight: 'calc(100dvh - 12rem)' }}>
+              {activeTab === 'device' && (
+                <DeviceTab
+                  camera={camera}
+                  deviceInfo={deviceInfo}
+                  isRebooting={isRebooting}
+                  onReboot={handleReboot}
+                />
+              )}
+
+              {activeTab === 'time' && (
+                <TimeTab
+                  deviceTime={deviceTime}
+                  ntpServer={ntpServer}
+                  setNtpServer={setNtpServer}
+                  timeMode={timeMode}
+                  onSwitchTimeMode={handleSwitchTimeMode}
+                  isSyncingTime={isSyncingTime}
+                  onSyncTime={handleSyncTime}
+                  onSaveNTP={handleSaveNTP}
+                />
+              )}
+
+              {activeTab === 'image' && (
+                <ImageTab
+                  camera={camera}
+                  snapshotKey={snapshotKey}
+                  imageSettings={imageSettings}
+                  setImageSettings={setImageSettings}
+                  onRefreshPreview={refreshPreview}
+                  onSaveImage={handleSaveImage}
+                  isSaving={isSavingImage}
+                />
+              )}
+
+              {activeTab === 'video' && (
+                <VideoTab
+                  streamChannel={streamChannel}
+                  setStreamChannel={setStreamChannel}
+                  mainStream={mainStream}
+                  setMainStream={setMainStream}
+                  subStream={subStream}
+                  setSubStream={setSubStream}
+                  onSaveStream={handleSaveStream}
+                />
+              )}
+
+              {activeTab === 'events' && (
+                <EventsTab
+                  camera={camera}
+                  capabilities={capabilities}
+                  setSaveStatus={setSaveStatus}
+                  refreshKey={refreshKey}
+                  onRegisterRefresh={(refreshFn) => {
+                    eventsRefreshRef.current = refreshFn;
+                  }}
+                  snapshotKey={snapshotKey}
+                  onRefreshPreview={refreshPreview}
+                />
+              )}
+
+              {activeTab === 'storage' && (
+                <StorageTab
+                  storageList={storageList}
+                  isRefreshingStorage={isRefreshingStorage}
+                  onRefreshStorage={handleRefreshStorage}
+                  formattingId={formattingId}
+                  onFormatStorage={handleExecuteFormat}
+                />
+              )}
+
+              {activeTab === 'ptz' && (
+                <PtzTab
+                  ptzPresets={ptzPresets}
+                  onPTZMove={handlePTZMove}
+                  onPTZGoto={handlePTZGoto}
+                />
+              )}
+
+              {activeTab === 'raw' && (
+                <RawIsapiTab
+                  rawMethod={rawMethod}
+                  setRawMethod={setRawMethod}
+                  rawPath={rawPath}
+                  setRawPath={setRawPath}
+                  rawBody={rawBody}
+                  setRawBody={setRawBody}
+                  rawResult={rawResult}
+                  rawLoading={rawLoading}
+                  onExecuteRaw={handleExecuteRaw}
+                />
+              )}
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+};

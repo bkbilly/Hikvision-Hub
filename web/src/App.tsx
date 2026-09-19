@@ -7,6 +7,7 @@ import { LiveGrid } from './components/LiveGrid';
 import { VideoPlayer } from './components/VideoPlayer';
 import { Timeline } from './components/Timeline';
 import { SettingsModal } from './components/SettingsModal';
+import { CameraSettingsModal } from './components/CameraSettingsModal';
 import { ShortcutsModal } from './components/ShortcutsModal';
 import { BookmarksModal } from './components/BookmarksModal';
 import { SaveBookmarkModal } from './components/SaveBookmarkModal';
@@ -18,6 +19,7 @@ export function App() {
   const [username, setUsername] = useState<string>('admin');
   const [cameras, setCameras] = useState<Camera[]>([]);
   const [selectedCamera, setSelectedCamera] = useState<Camera | null>(null);
+  const [deviceSettingsCamera, setDeviceSettingsCamera] = useState<Camera | null>(null);
   const [activeTab, setActiveTab] = useState<'live' | 'playback'>('live');
   const [events, setEvents] = useState<RecordingSegment[]>([]);
   const [activeSegment, setActiveSegment] = useState<RecordingSegment | null>(null);
@@ -340,6 +342,8 @@ export function App() {
             cameras={enabledCameras}
             onSelectCameraForPlayback={handleSelectCameraForPlayback}
             onOpenSettings={() => setIsSettingsOpen(true)}
+            onOpenDeviceSettings={(cam) => setDeviceSettingsCamera(cam)}
+            isPaused={!!deviceSettingsCamera || isSettingsOpen}
           />
         ) : (
           <div className="space-y-4">
@@ -367,6 +371,7 @@ export function App() {
                 onOpenShortcuts={() => setIsShortcutsOpen(true)}
                 onOpenSaveBookmark={() => setIsSaveBookmarkOpen(true)}
                 isBookmarked={isCurrentSegmentBookmarked}
+                isLiveFeedPaused={!!deviceSettingsCamera || isSettingsOpen}
               />
             )}
 
@@ -400,6 +405,13 @@ export function App() {
           loadCameras();
           loadEventsForDate(selectedDate);
         }}
+        onOpenDeviceSettings={(cam) => setDeviceSettingsCamera(cam)}
+      />
+
+      <CameraSettingsModal
+        isOpen={!!deviceSettingsCamera}
+        onClose={() => setDeviceSettingsCamera(null)}
+        camera={deviceSettingsCamera}
       />
 
       <ShortcutsModal

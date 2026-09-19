@@ -38,20 +38,21 @@ interface VideoPlayerProps {
   onOpenShortcuts?: () => void;
   onOpenSaveBookmark?: () => void;
   isBookmarked?: boolean;
+  isLiveFeedPaused?: boolean;
 }
 
-const LivePlayerPreview: React.FC<{ camera: Camera }> = ({ camera }) => {
+const LivePlayerPreview: React.FC<{ camera: Camera; isPaused?: boolean }> = ({ camera, isPaused = false }) => {
   return (
     <div className="w-full h-full relative flex items-center justify-center bg-slate-950">
       <LiveStreamView
         cameraId={camera.id}
         cameraName={camera.name}
-        isPaused={false}
+        isPaused={isPaused}
         className="w-full h-full object-contain select-none"
       />
       <div className="absolute top-3 right-3 flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-rose-500/20 border border-rose-500/40 text-[10px] font-bold text-rose-400 uppercase tracking-wider backdrop-blur-md shadow-lg pointer-events-none">
         <span className="w-2 h-2 rounded-full bg-rose-500 animate-pulse" />
-        <span>LIVE FEED</span>
+        <span>{isPaused ? 'FEED PAUSED' : 'LIVE FEED'}</span>
       </div>
       <div className="absolute bottom-4 left-1/2 -translate-x-1/2 bg-slate-900/90 border border-slate-700/80 px-4 py-2 rounded-xl backdrop-blur-md shadow-xl text-slate-200 text-xs sm:text-sm flex items-center gap-2 pointer-events-none whitespace-nowrap">
         <CameraIcon className="w-4 h-4 text-blue-400" />
@@ -83,6 +84,7 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({
   onOpenShortcuts,
   onOpenSaveBookmark,
   isBookmarked,
+  isLiveFeedPaused = false,
 }) => {
   const containerRef = useRef<HTMLDivElement | null>(null);
   const videoRef = useRef<HTMLVideoElement | null>(null);
@@ -665,7 +667,7 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({
             }}
           />
         ) : selectedCamera ? (
-          <LivePlayerPreview camera={selectedCamera} />
+          <LivePlayerPreview camera={selectedCamera} isPaused={isLiveFeedPaused} />
         ) : (
           <div className="w-full h-full flex flex-col items-center justify-center text-slate-500 gap-2 p-6 text-center">
             <CameraIcon className="w-12 h-12 text-slate-700" />

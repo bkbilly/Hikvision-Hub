@@ -201,7 +201,7 @@ export const Navbar: React.FC<NavbarProps> = ({
 
       {/* Mobile / Tablet Drawer (<md) */}
       {mobileMenuOpen && (
-        <div className="md:hidden border-t border-slate-800 bg-slate-950/98 backdrop-blur-lg px-4 py-4 space-y-3.5 animate-in slide-in-from-top-2 duration-150">
+        <div className="md:hidden border-t border-slate-800 bg-slate-950/98 backdrop-blur-lg px-4 py-4 space-y-3.5 animate-in slide-in-from-top-2 duration-150 overflow-y-auto max-h-[calc(100dvh-4rem)]">
           <div className="space-y-1.5">
             <div className="text-[11px] font-semibold text-slate-400 uppercase tracking-wider">
               Select Camera

@@ -7,13 +7,16 @@ import {
   Play, 
   Pause,
   WifiOff, 
-  Settings2
+  Settings2,
+  Sliders
 } from 'lucide-react';
 
 interface LiveGridProps {
   cameras: Camera[];
   onSelectCameraForPlayback: (camera: Camera) => void;
   onOpenSettings: () => void;
+  onOpenDeviceSettings?: (camera: Camera) => void;
+  isPaused?: boolean;
 }
 
 interface LiveStreamViewProps {
@@ -171,6 +174,7 @@ interface CameraCardProps {
   isPaused: boolean;
   onSelectForPlayback: (cam: Camera) => void;
   onFullscreen: (cam: Camera) => void;
+  onOpenDeviceSettings?: (cam: Camera) => void;
 }
 
 const CameraCard: React.FC<CameraCardProps> = ({
@@ -179,6 +183,7 @@ const CameraCard: React.FC<CameraCardProps> = ({
   isPaused,
   onSelectForPlayback,
   onFullscreen,
+  onOpenDeviceSettings,
 }) => {
   return (
     <div className="group relative glass-panel rounded-xl overflow-hidden border border-slate-800 hover:border-blue-500/40 transition-all bg-slate-950 aspect-video flex flex-col justify-between shadow-lg">
@@ -212,6 +217,15 @@ const CameraCard: React.FC<CameraCardProps> = ({
         </div>
 
         <div className="flex items-center gap-1 opacity-90 group-hover:opacity-100 transition-opacity pointer-events-auto">
+          {onOpenDeviceSettings && (
+            <button
+              onClick={() => onOpenDeviceSettings(cam)}
+              title="Camera Hardware & Image Settings (ISAPI)"
+              className="p-1.5 rounded-lg bg-slate-900/80 hover:bg-amber-600 text-slate-300 hover:text-white transition-colors cursor-pointer"
+            >
+              <Sliders className="w-3.5 h-3.5" />
+            </button>
+          )}
           <button
             onClick={() => onFullscreen(cam)}
             title="Fullscreen Live View"
@@ -244,6 +258,8 @@ export const LiveGrid: React.FC<LiveGridProps> = ({
   cameras,
   onSelectCameraForPlayback,
   onOpenSettings,
+  onOpenDeviceSettings,
+  isPaused = false,
 }) => {
   const [refreshKey, setRefreshKey] = useState<number>(Date.now());
   const [isTabVisible, setIsTabVisible] = useState<boolean>(() => !document.hidden);
@@ -280,8 +296,8 @@ export const LiveGrid: React.FC<LiveGridProps> = ({
     );
   }
 
-  // Determine if streams should be active
-  const isPausedOverall = !isTabVisible || isUserPaused;
+  // Determine if streams should be active (paused when tab hidden, user paused, or a settings modal is open)
+  const isPausedOverall = !isTabVisible || isUserPaused || isPaused;
 
   return (
     <div className="space-y-4">
@@ -292,6 +308,10 @@ export const LiveGrid: React.FC<LiveGridProps> = ({
             <div className="flex items-center gap-1.5 px-2 py-0.5 rounded-full bg-rose-500/20 border border-rose-500/30 text-rose-400 text-xs">
               <span className="w-2 h-2 rounded-full bg-rose-500 animate-pulse" />
               <span className="font-bold">LIVE</span>
+            </div>
+          ) : isPaused ? (
+            <div className="flex items-center gap-1.5 px-2 py-0.5 rounded-full bg-amber-500/20 border border-amber-500/30 text-amber-400 text-xs">
+              <span className="font-bold">PAUSED (SETTINGS OPEN)</span>
             </div>
           ) : (
             <div className="flex items-center gap-1.5 px-2 py-0.5 rounded-full bg-slate-800 border border-slate-700 text-slate-400 text-xs">
@@ -356,6 +376,7 @@ export const LiveGrid: React.FC<LiveGridProps> = ({
               isPaused={isCardPaused}
               onSelectForPlayback={onSelectCameraForPlayback}
               onFullscreen={(c) => setFullscreenCam(c)}
+              onOpenDeviceSettings={onOpenDeviceSettings}
             />
           );
         })}
@@ -397,7 +418,7 @@ export const LiveGrid: React.FC<LiveGridProps> = ({
             <LiveStreamView
               cameraId={fullscreenCam.id}
               cameraName={fullscreenCam.name}
-              isPaused={false}
+              isPaused={isPausedOverall}
               className="w-full h-full object-contain select-none"
             />
           </div>

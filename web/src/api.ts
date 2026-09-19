@@ -1,4 +1,27 @@
-import type { Bookmark, Camera, RecordingDateInfo, RecordingSegment, SystemStatus, UserInfo } from './types';
+import type {
+  Bookmark,
+  Camera,
+  CameraCapabilities,
+  DeviceInfo,
+  DeviceTime,
+  FieldDetection,
+  HddInfo,
+  ImageSettings,
+  LineDetection,
+  MotionDetection,
+  NTPServer,
+  PTZPreset,
+  RecordingDateInfo,
+  RecordingSegment,
+  StreamSettings,
+  SystemStatus,
+  TamperDetection,
+  UnattendedBaggage,
+  ObjectRemoval,
+  RegionEntrance,
+  RegionExiting,
+  UserInfo,
+} from './types';
 
 const API_BASE = '/api';
 
@@ -194,4 +217,175 @@ export const api = {
 
   clearCache: () =>
     request<{ message: string; success: boolean }>('/system/clear-cache', { method: 'POST' }),
+
+  // ==========================================
+  // Camera ISAPI Device Configuration & Control
+  // ==========================================
+
+  getCameraCapabilities: (id: number) =>
+    request<CameraCapabilities>(`/cameras/${id}/isapi/capabilities`),
+
+  getCameraDeviceInfo: (id: number) =>
+    request<DeviceInfo>(`/cameras/${id}/isapi/device-info`),
+
+  getCameraTime: (id: number) =>
+    request<DeviceTime>(`/cameras/${id}/isapi/time`),
+
+  setCameraTime: (id: number, data: DeviceTime) =>
+    request<{ success: boolean; message: string }>(`/cameras/${id}/isapi/time`, {
+      method: 'PUT',
+      body: JSON.stringify(data),
+    }),
+
+  syncCameraTime: (id: number, data: { client_time: string; timezone?: string }) =>
+    request<{ success: boolean; message: string; synced_time: string }>(`/cameras/${id}/isapi/sync-time`, {
+      method: 'POST',
+      body: JSON.stringify(data),
+    }),
+
+  getCameraNTP: (id: number) =>
+    request<NTPServer>(`/cameras/${id}/isapi/ntp`),
+
+  setCameraNTP: (id: number, data: NTPServer) =>
+    request<{ success: boolean; message: string }>(`/cameras/${id}/isapi/ntp`, {
+      method: 'PUT',
+      body: JSON.stringify(data),
+    }),
+
+  getCameraImage: (id: number, channel?: number) =>
+    request<ImageSettings>(`/cameras/${id}/isapi/image${channel ? `?channel=${channel}` : ''}`),
+
+  setCameraImage: (id: number, data: ImageSettings) =>
+    request<{ success: boolean; message: string }>(`/cameras/${id}/isapi/image`, {
+      method: 'PUT',
+      body: JSON.stringify(data),
+    }),
+
+  getCameraStream: (id: number, channel: number = 101) =>
+    request<StreamSettings>(`/cameras/${id}/isapi/video/${channel}`),
+
+  setCameraStream: (id: number, channel: number, data: StreamSettings) =>
+    request<{ success: boolean; message: string }>(`/cameras/${id}/isapi/video/${channel}`, {
+      method: 'PUT',
+      body: JSON.stringify(data),
+    }),
+
+  getCameraMotion: (id: number) =>
+    request<MotionDetection>(`/cameras/${id}/isapi/motion`),
+
+  setCameraMotion: (id: number, data: MotionDetection) =>
+    request<{ success: boolean; message: string }>(`/cameras/${id}/isapi/motion`, {
+      method: 'PUT',
+      body: JSON.stringify(data),
+    }),
+
+  getCameraLineDetection: (id: number) =>
+    request<LineDetection>(`/cameras/${id}/isapi/line-detection`),
+
+  setCameraLineDetection: (id: number, data: LineDetection) =>
+    request<{ success: boolean; message: string }>(`/cameras/${id}/isapi/line-detection`, {
+      method: 'PUT',
+      body: JSON.stringify(data),
+    }),
+
+  getCameraIntrusion: (id: number) =>
+    request<FieldDetection>(`/cameras/${id}/isapi/intrusion`),
+
+  setCameraIntrusion: (id: number, data: FieldDetection) =>
+    request<{ success: boolean; message: string }>(`/cameras/${id}/isapi/intrusion`, {
+      method: 'PUT',
+      body: JSON.stringify(data),
+    }),
+
+  getCameraRegionEntrance: (id: number) =>
+    request<RegionEntrance>(`/cameras/${id}/isapi/region-entrance`),
+
+  setCameraRegionEntrance: (id: number, data: RegionEntrance) =>
+    request<{ success: boolean; message: string }>(`/cameras/${id}/isapi/region-entrance`, {
+      method: 'PUT',
+      body: JSON.stringify(data),
+    }),
+
+  getCameraRegionExiting: (id: number) =>
+    request<RegionExiting>(`/cameras/${id}/isapi/region-exiting`),
+
+  setCameraRegionExiting: (id: number, data: RegionExiting) =>
+    request<{ success: boolean; message: string }>(`/cameras/${id}/isapi/region-exiting`, {
+      method: 'PUT',
+      body: JSON.stringify(data),
+    }),
+
+  getCameraTamper: (id: number) =>
+    request<TamperDetection>(`/cameras/${id}/isapi/tamper`),
+
+  setCameraTamper: (id: number, data: TamperDetection) =>
+    request<{ success: boolean; message: string }>(`/cameras/${id}/isapi/tamper`, {
+      method: 'PUT',
+      body: JSON.stringify(data),
+    }),
+
+  getCameraUnattendedBaggage: (id: number) =>
+    request<UnattendedBaggage>(`/cameras/${id}/isapi/unattended-baggage`),
+
+  setCameraUnattendedBaggage: (id: number, data: UnattendedBaggage) =>
+    request<{ success: boolean; message: string }>(`/cameras/${id}/isapi/unattended-baggage`, {
+      method: 'PUT',
+      body: JSON.stringify(data),
+    }),
+
+  getCameraObjectRemoval: (id: number) =>
+    request<ObjectRemoval>(`/cameras/${id}/isapi/object-removal`),
+
+  setCameraObjectRemoval: (id: number, data: ObjectRemoval) =>
+    request<{ success: boolean; message: string }>(`/cameras/${id}/isapi/object-removal`, {
+      method: 'PUT',
+      body: JSON.stringify(data),
+    }),
+
+  getCameraStorage: (id: number) =>
+    request<HddInfo[]>(`/cameras/${id}/isapi/storage`),
+
+  formatCameraStorage: (id: number, hddId: number) =>
+    request<{ success: boolean; message: string }>(`/cameras/${id}/isapi/storage/${hddId}/format`, {
+      method: 'POST',
+    }),
+
+  rebootCamera: (id: number) =>
+    request<{ success: boolean; message: string }>(`/cameras/${id}/isapi/reboot`, {
+      method: 'POST',
+    }),
+
+  ptzControl: (id: number, data: { pan: number; tilt: number; zoom: number }) =>
+    request<{ success: boolean }>(`/cameras/${id}/isapi/ptz/control`, {
+      method: 'POST',
+      body: JSON.stringify(data),
+    }),
+
+  getPTZPresets: (id: number) =>
+    request<PTZPreset[]>(`/cameras/${id}/isapi/ptz/presets`),
+
+  ptzGoto: (id: number, presetId: number) =>
+    request<{ success: boolean }>(`/cameras/${id}/isapi/ptz/goto`, {
+      method: 'POST',
+      body: JSON.stringify({ preset_id: presetId }),
+    }),
+
+  proxyISAPI: async (id: number, path: string, method = 'GET', body?: string, contentType = 'application/xml') => {
+    const token = getAuthToken();
+    const headers: Record<string, string> = {};
+    if (token) headers['Authorization'] = `Bearer ${token}`;
+    if (contentType) headers['Content-Type'] = contentType;
+
+    const res = await fetch(`${API_BASE}/cameras/${id}/isapi/proxy?path=${encodeURIComponent(path)}`, {
+      method,
+      headers,
+      body: body || undefined,
+    });
+    const text = await res.text();
+    return {
+      status: res.status,
+      contentType: res.headers.get('Content-Type') || 'text/plain',
+      data: text,
+    };
+  },
 };

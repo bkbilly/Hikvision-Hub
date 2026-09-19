@@ -1,12 +1,14 @@
 package hikvision
 
 import (
+	"bytes"
 	"crypto/md5"
 	"crypto/rand"
 	"encoding/hex"
 	"fmt"
 	"io"
 	"net/http"
+	"net/url"
 	"strings"
 	"sync"
 	"time"
@@ -36,7 +38,7 @@ type CameraClient struct {
 func NewCameraClient() *CameraClient {
 	return &CameraClient{
 		client: &http.Client{
-			Timeout: 6 * time.Second,
+			Timeout: 8 * time.Second,
 		},
 		digestCache:   make(map[string]*digestSession),
 		snapshotCache: make(map[string]*cachedSnapshot),
@@ -64,9 +66,8 @@ func (c *CameraClient) FetchSnapshot(ip, username, password string, isISAPI bool
 
 	var lastErr error
 	for _, p := range candidatePaths {
-		url := fmt.Sprintf("http://%s%s", ip, p)
-		data, err := c.doDigestGet(url, username, password)
-		if err == nil && len(data) > 0 {
+		data, statusCode, _, err := c.DoRequest(ip, username, password, "GET", p, nil, "")
+		if err == nil && statusCode == http.StatusOK && len(data) > 0 {
 			// Save in cache
 			c.mu.Lock()
 			c.snapshotCache[ip] = &cachedSnapshot{
@@ -76,7 +77,11 @@ func (c *CameraClient) FetchSnapshot(ip, username, password string, isISAPI bool
 			c.mu.Unlock()
 			return data, nil
 		}
-		lastErr = err
+		if err != nil {
+			lastErr = err
+		} else {
+			lastErr = fmt.Errorf("status code %d", statusCode)
+		}
 	}
 
 	// If live fetch failed, check if we have a recent cached frame (<30s old)
@@ -99,9 +104,8 @@ func (c *CameraClient) AutoDetect(ip, username, password string) (bool, string, 
 		"/ISAPI/Streaming/Channels/102/picture",
 	}
 	for _, p := range isapiPaths {
-		url := fmt.Sprintf("http://%s%s", ip, p)
-		data, err := c.doDigestGet(url, username, password)
-		if err == nil && len(data) > 0 {
+		data, statusCode, _, err := c.DoRequest(ip, username, password, "GET", p, nil, "")
+		if err == nil && statusCode == http.StatusOK && len(data) > 0 {
 			return true, fmt.Sprintf("Success! Connected via ISAPI protocol (%d bytes received)", len(data)), nil
 		}
 	}
@@ -113,9 +117,8 @@ func (c *CameraClient) AutoDetect(ip, username, password string) (bool, string, 
 		"/System/deviceInfo",
 	}
 	for _, p := range legacyPaths {
-		url := fmt.Sprintf("http://%s%s", ip, p)
-		data, err := c.doDigestGet(url, username, password)
-		if err == nil && len(data) > 0 {
+		data, statusCode, _, err := c.DoRequest(ip, username, password, "GET", p, nil, "")
+		if err == nil && statusCode == http.StatusOK && len(data) > 0 {
 			return false, fmt.Sprintf("Success! Connected via Legacy protocol (%d bytes received)", len(data)), nil
 		}
 	}
@@ -128,64 +131,89 @@ func (c *CameraClient) TestConnection(ip, username, password string) (bool, stri
 	return c.AutoDetect(ip, username, password)
 }
 
-func (c *CameraClient) doDigestGet(targetURL, username, password string) ([]byte, error) {
-	cacheKey := fmt.Sprintf("%s@%s", username, targetURL)
+// DoRequest sends an HTTP request to the camera with automatic Digest Authentication (and Basic fallback).
+// Returns (responseBody, statusCode, contentType, error).
+func (c *CameraClient) DoRequest(ip, username, password, method, path string, body []byte, contentType string) ([]byte, int, string, error) {
+	if !strings.HasPrefix(path, "/") {
+		path = "/" + path
+	}
+
+	targetURL := fmt.Sprintf("http://%s%s", ip, path)
+	hostKey := fmt.Sprintf("%s@%s", username, ip)
 
 	c.mu.Lock()
-	session := c.digestCache[cacheKey]
+	session := c.digestCache[hostKey]
 	c.mu.Unlock()
 
-	// 1. If we have a cached digest session, try sending authenticated request first
+	// 1. If we have a cached digest session, attempt authenticated request directly
 	if session != nil {
-		data, statusCode, err := c.sendDigestRequest(targetURL, username, password, session)
-		if err == nil && statusCode == http.StatusOK {
-			return data, nil
+		data, statusCode, respContentType, err := c.sendDigestRequest(method, targetURL, username, password, session, body, contentType)
+		if err == nil && statusCode != http.StatusUnauthorized {
+			return data, statusCode, respContentType, nil
 		}
-		// If failed with 401, nonce may have expired; clear and re-challenge
+		// If nonce expired or invalidated, clear session and fall through to challenge
 		if statusCode == http.StatusUnauthorized {
 			c.mu.Lock()
-			delete(c.digestCache, cacheKey)
+			delete(c.digestCache, hostKey)
 			c.mu.Unlock()
 		}
 	}
 
-	// 2. Initial request (unauthenticated or challenge refresh)
-	req, err := http.NewRequest("GET", targetURL, nil)
+	// 2. Initial challenge request (send GET or actual method to get 401 challenge header)
+	reqMethod := method
+	var reqBody io.Reader
+	if len(body) > 0 {
+		reqBody = bytes.NewReader(body)
+	}
+
+	req, err := http.NewRequest(reqMethod, targetURL, reqBody)
 	if err != nil {
-		return nil, err
+		return nil, 0, "", err
+	}
+	if contentType != "" {
+		req.Header.Set("Content-Type", contentType)
 	}
 
 	resp, err := c.client.Do(req)
 	if err != nil {
-		return nil, err
+		return nil, 0, "", err
 	}
 	defer resp.Body.Close()
 
-	if resp.StatusCode == http.StatusOK {
-		return io.ReadAll(resp.Body)
-	}
+	respContentType := resp.Header.Get("Content-Type")
 
+	// If request succeeded without auth (e.g. unauthenticated device or session cookie)
 	if resp.StatusCode != http.StatusUnauthorized {
-		return nil, fmt.Errorf("camera returned status %d", resp.StatusCode)
+		respData, err := io.ReadAll(resp.Body)
+		return respData, resp.StatusCode, respContentType, err
 	}
 
 	authHeader := resp.Header.Get("WWW-Authenticate")
 	if authHeader == "" {
 		// Try Basic auth fallback
-		reqBasic, _ := http.NewRequest("GET", targetURL, nil)
+		var basicBody io.Reader
+		if len(body) > 0 {
+			basicBody = bytes.NewReader(body)
+		}
+		reqBasic, err := http.NewRequest(method, targetURL, basicBody)
+		if err != nil {
+			return nil, 0, "", err
+		}
 		reqBasic.SetBasicAuth(username, password)
+		if contentType != "" {
+			reqBasic.Header.Set("Content-Type", contentType)
+		}
+
 		respBasic, err := c.client.Do(reqBasic)
 		if err != nil {
-			return nil, err
+			return nil, 0, "", err
 		}
 		defer respBasic.Body.Close()
-		if respBasic.StatusCode == http.StatusOK {
-			return io.ReadAll(respBasic.Body)
-		}
-		return nil, fmt.Errorf("authentication failed (status %d)", respBasic.StatusCode)
+		respBasicData, err := io.ReadAll(respBasic.Body)
+		return respBasicData, respBasic.StatusCode, respBasic.Header.Get("Content-Type"), err
 	}
 
-	// 3. Parse Digest challenge
+	// 3. Parse Digest challenge and create new session
 	digestParams := parseDigestHeader(authHeader)
 	newSession := &digestSession{
 		realm:     digestParams["realm"],
@@ -200,32 +228,40 @@ func (c *CameraClient) doDigestGet(targetURL, username, password string) ([]byte
 	}
 
 	c.mu.Lock()
-	c.digestCache[cacheKey] = newSession
+	c.digestCache[hostKey] = newSession
 	c.mu.Unlock()
 
-	data, statusCode, err := c.sendDigestRequest(targetURL, username, password, newSession)
-	if err != nil {
-		return nil, err
-	}
-	if statusCode != http.StatusOK {
-		return nil, fmt.Errorf("digest auth failed with status %d", statusCode)
-	}
-	return data, nil
+	// 4. Send authenticated Digest request
+	return c.sendDigestRequest(method, targetURL, username, password, newSession, body, contentType)
 }
 
-func (c *CameraClient) sendDigestRequest(targetURL, username, password string, session *digestSession) ([]byte, int, error) {
-	req, err := http.NewRequest("GET", targetURL, nil)
+func (c *CameraClient) sendDigestRequest(method, targetURL, username, password string, session *digestSession, body []byte, contentType string) ([]byte, int, string, error) {
+	var bodyReader io.Reader
+	if len(body) > 0 {
+		bodyReader = bytes.NewReader(body)
+	}
+
+	req, err := http.NewRequest(method, targetURL, bodyReader)
 	if err != nil {
-		return nil, 0, err
+		return nil, 0, "", err
+	}
+
+	parsedURL, err := url.Parse(targetURL)
+	if err != nil {
+		return nil, 0, "", err
+	}
+
+	uri := parsedURL.RequestURI()
+	if uri == "" {
+		uri = "/"
 	}
 
 	session.ncCount++
 	nc := fmt.Sprintf("%08x", session.ncCount)
 	cnonce := randomHex(8)
-	uri := req.URL.RequestURI()
 
 	ha1 := md5Hex(fmt.Sprintf("%s:%s:%s", username, session.realm, password))
-	ha2 := md5Hex(fmt.Sprintf("%s:%s", "GET", uri))
+	ha2 := md5Hex(fmt.Sprintf("%s:%s", method, uri))
 
 	var response string
 	if strings.Contains(session.qop, "auth") {
@@ -245,19 +281,19 @@ func (c *CameraClient) sendDigestRequest(targetURL, username, password string, s
 	}
 
 	req.Header.Set("Authorization", authVal)
+	if contentType != "" {
+		req.Header.Set("Content-Type", contentType)
+	}
 
 	resp, err := c.client.Do(req)
 	if err != nil {
-		return nil, 0, err
+		return nil, 0, "", err
 	}
 	defer resp.Body.Close()
 
-	if resp.StatusCode != http.StatusOK {
-		return nil, resp.StatusCode, fmt.Errorf("status %d", resp.StatusCode)
-	}
-
-	data, err := io.ReadAll(resp.Body)
-	return data, resp.StatusCode, err
+	respContentType := resp.Header.Get("Content-Type")
+	respData, err := io.ReadAll(resp.Body)
+	return respData, resp.StatusCode, respContentType, err
 }
 
 func parseDigestHeader(header string) map[string]string {

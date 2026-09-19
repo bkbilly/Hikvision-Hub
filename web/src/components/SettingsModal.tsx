@@ -18,7 +18,8 @@ import {
   FolderSearch,
   Server,
   ChevronUp,
-  ChevronDown
+  ChevronDown,
+  Sliders
 } from 'lucide-react';
 
 interface SettingsModalProps {
@@ -26,6 +27,7 @@ interface SettingsModalProps {
   onClose: () => void;
   cameras: Camera[];
   onCamerasUpdated: () => void;
+  onOpenDeviceSettings?: (camera: Camera) => void;
 }
 
 export const SettingsModal: React.FC<SettingsModalProps> = ({
@@ -33,6 +35,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
   onClose,
   cameras,
   onCamerasUpdated,
+  onOpenDeviceSettings,
 }) => {
   const [activeTab, setActiveTab] = useState<'cameras' | 'system' | 'security'>('cameras');
   const [editingCamera, setEditingCamera] = useState<Partial<Camera> | null>(null);
@@ -222,10 +225,10 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
   if (!isOpen) return null;
 
   return (
-    <div className="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-center justify-center p-2 sm:p-4 overflow-y-auto">
-      <div className="relative w-full max-w-3xl glass-panel bg-slate-950 rounded-2xl border border-slate-800 shadow-2xl overflow-hidden my-auto max-h-[90vh] flex flex-col">
+    <div className="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-start justify-center p-2 sm:p-4 overflow-y-auto">
+      <div className="relative w-full max-w-3xl glass-panel bg-slate-950 rounded-2xl border border-slate-800 shadow-2xl overflow-hidden my-auto max-h-[calc(100dvh-1rem)] sm:max-h-[calc(100dvh-2rem)] flex flex-col">
         {/* Header */}
-        <div className="flex items-center justify-between px-4 sm:px-6 py-4 border-b border-slate-800 bg-slate-900/60">
+        <div className="flex items-center justify-between px-4 sm:px-6 py-4 border-b border-slate-800 bg-slate-900/60 shrink-0">
           <div className="flex items-center gap-2">
             <CameraIcon className="w-5 h-5 text-blue-400" />
             <h2 className="font-bold text-base sm:text-lg text-white">Hub Configuration</h2>
@@ -239,10 +242,10 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
         </div>
 
         {/* Tab Navigation */}
-        <div className="flex border-b border-slate-800 bg-slate-900/40 px-4 sm:px-6">
+        <div className="flex border-b border-slate-800 bg-slate-900/40 px-4 sm:px-6 shrink-0 overflow-x-auto">
           <button
             onClick={() => { setActiveTab('cameras'); setEditingCamera(null); }}
-            className={`flex items-center gap-2 py-3 px-3 text-xs sm:text-sm font-medium border-b-2 transition-colors ${
+            className={`flex items-center gap-2 py-3 px-3 text-xs sm:text-sm font-medium border-b-2 transition-colors whitespace-nowrap ${
               activeTab === 'cameras'
                 ? 'border-blue-500 text-blue-400 font-semibold'
                 : 'border-transparent text-slate-400 hover:text-slate-200'
@@ -253,7 +256,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
           </button>
           <button
             onClick={() => setActiveTab('system')}
-            className={`flex items-center gap-2 py-3 px-3 text-xs sm:text-sm font-medium border-b-2 transition-colors ${
+            className={`flex items-center gap-2 py-3 px-3 text-xs sm:text-sm font-medium border-b-2 transition-colors whitespace-nowrap ${
               activeTab === 'system'
                 ? 'border-blue-500 text-blue-400 font-semibold'
                 : 'border-transparent text-slate-400 hover:text-slate-200'
@@ -264,7 +267,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
           </button>
           <button
             onClick={() => setActiveTab('security')}
-            className={`flex items-center gap-2 py-3 px-3 text-xs sm:text-sm font-medium border-b-2 transition-colors ${
+            className={`flex items-center gap-2 py-3 px-3 text-xs sm:text-sm font-medium border-b-2 transition-colors whitespace-nowrap ${
               activeTab === 'security'
                 ? 'border-blue-500 text-blue-400 font-semibold'
                 : 'border-transparent text-slate-400 hover:text-slate-200'
@@ -276,7 +279,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
         </div>
 
         {/* Modal Body Content */}
-        <div className="p-4 sm:p-6 overflow-y-auto flex-1 space-y-6">
+        <div className="p-4 sm:p-6 overflow-y-auto flex-1 min-h-0 space-y-6">
           {/* TAB 1: CAMERAS */}
           {activeTab === 'cameras' && (
             <div>
@@ -523,7 +526,20 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                             </div>
                           </div>
 
-                          <div className="flex items-center gap-2 shrink-0">
+                          <div className="flex items-center gap-1.5 shrink-0">
+                            {onOpenDeviceSettings && (
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  onClose();
+                                  onOpenDeviceSettings(c);
+                                }}
+                                title="On-Camera Hardware & Image Settings (ISAPI)"
+                                className="p-1.5 text-slate-400 hover:text-amber-400 hover:bg-slate-800 rounded-lg transition-colors flex items-center gap-1 text-xs"
+                              >
+                                <Sliders className="w-4 h-4" />
+                              </button>
+                            )}
                             <button
                               type="button"
                               onClick={() => handleToggleEnabled(c)}
