@@ -6,6 +6,8 @@ name: Docker
 # documentation.
 
 on:
+  push:
+    branches: [ "master" ]
   release:
     types: [published]
 
@@ -53,6 +55,9 @@ jobs:
         uses: docker/metadata-action@v5.5.0
         with:
           images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
+          tags: |
+            type=raw,value=dev,enable=${{ github.event_name == 'push' }}
+            type=semver,pattern={{version}}
 
       # Build and push Docker image with Buildx (don't push on PR)
       # https://github.com/docker/build-push-action
