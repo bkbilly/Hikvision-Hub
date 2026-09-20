@@ -42,7 +42,7 @@ export const TamperDetectionForm: React.FC<TamperDetectionFormProps> = ({
             onClick={onStartDrawing}
             className="px-2.5 py-1 bg-rose-500/10 hover:bg-rose-500/20 border border-rose-500/30 text-rose-400 rounded-lg text-xs font-medium flex items-center gap-1.5 transition-colors cursor-pointer"
           >
-            <Edit3 className="w-3 h-3" /> Draw Tamper Zone
+            <Edit3 className="w-3 h-3" /> Draw Tamper Rectangle (90° Zone)
           </button>
           <label className="relative inline-flex items-center cursor-pointer">
             <input
@@ -78,26 +78,31 @@ export const TamperDetectionForm: React.FC<TamperDetectionFormProps> = ({
       {/* 4 Region Corner Coordinates Display */}
       <div className="p-3 rounded-lg bg-slate-950/60 border border-slate-800/80 grid grid-cols-2 sm:grid-cols-4 gap-3 text-xs font-mono">
         <div>
-          <span className="text-rose-400 font-bold block">Corner 1</span>
+          <span className="text-rose-400 font-bold block">Corner 1 (TL)</span>
           <span className="text-slate-400">X: {tPts[0].x}, Y: {tPts[0].y}</span>
         </div>
         <div>
-          <span className="text-rose-400 font-bold block">Corner 2</span>
+          <span className="text-rose-400 font-bold block">Corner 2 (TR)</span>
           <span className="text-slate-400">X: {tPts[1].x}, Y: {tPts[1].y}</span>
         </div>
         <div>
-          <span className="text-rose-400 font-bold block">Corner 3</span>
+          <span className="text-rose-400 font-bold block">Corner 3 (BR)</span>
           <span className="text-slate-400">X: {tPts[2].x}, Y: {tPts[2].y}</span>
         </div>
         <div>
-          <span className="text-rose-400 font-bold block">Corner 4</span>
+          <span className="text-rose-400 font-bold block">Corner 4 (BL)</span>
           <span className="text-slate-400">X: {tPts[3].x}, Y: {tPts[3].y}</span>
         </div>
       </div>
 
       <div className="p-3 rounded-xl bg-slate-950/60 border border-slate-800/80 text-xs text-slate-400 flex items-start gap-2">
         <Info className="w-4 h-4 text-rose-400 shrink-0 mt-0.5" />
-        <span>Video tampering detection evaluates image brightness contrast changes and sudden blur within the defined zone to detect physical lens obstruction or intentional defocusing.</span>
+        <div className="space-y-1">
+          <p className="font-semibold text-slate-300">90° Rectangle Requirement:</p>
+          <p>
+            Hikvision video tampering algorithms evaluate brightness contrast and blur within an axis-aligned 90° rectangular window. Freeform non-rectangular polygons are not supported by the camera firmware. Drag any of the 4 corners or use 2-click drawing to adjust the detection box.
+          </p>
+        </div>
       </div>
 
       <div className="flex justify-end pt-1">

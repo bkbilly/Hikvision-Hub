@@ -48,7 +48,7 @@ export const Navbar: React.FC<NavbarProps> = ({
 
   return (
     <header className="sticky top-0 z-30 w-full glass-panel border-b border-slate-800/80 bg-slate-950/90 backdrop-blur-md">
-      <div className="max-w-7xl mx-auto px-2.5 sm:px-4 md:px-6 h-14 flex items-center justify-between gap-2">
+      <div className="w-full mx-auto px-2.5 sm:px-4 md:px-6 h-14 flex items-center justify-between gap-2">
         {/* Left: Brand & Navigation Tabs */}
         <div className="flex items-center gap-2 sm:gap-3 shrink-0">
           <div className="flex items-center gap-2 shrink-0">
@@ -157,7 +157,7 @@ export const Navbar: React.FC<NavbarProps> = ({
             <button
               onClick={onOpenBookmarks}
               title="Saved Recording Bookmarks"
-              className="relative flex items-center gap-1.5 px-2 sm:px-2.5 py-1.5 text-xs sm:text-sm font-medium text-slate-300 hover:text-white bg-slate-900 border border-slate-800 hover:border-amber-500/50 rounded-lg transition-all"
+              className="relative hidden md:flex items-center gap-1.5 px-2 sm:px-2.5 py-1.5 text-xs sm:text-sm font-medium text-slate-300 hover:text-white bg-slate-900 border border-slate-800 hover:border-amber-500/50 rounded-lg transition-all"
             >
               <Bookmark className="w-4 h-4 text-amber-400 fill-amber-400/20 shrink-0" />
               <span className="hidden xl:inline">Bookmarks</span>
@@ -173,7 +173,7 @@ export const Navbar: React.FC<NavbarProps> = ({
           <button
             onClick={onOpenSettings}
             title="Configuration & Camera Manager"
-            className="flex items-center gap-1.5 px-2 sm:px-2.5 py-1.5 text-xs sm:text-sm font-medium text-slate-300 hover:text-white bg-slate-900 border border-slate-800 hover:border-slate-700 rounded-lg transition-all"
+            className="hidden md:flex items-center gap-1.5 px-2 sm:px-2.5 py-1.5 text-xs sm:text-sm font-medium text-slate-300 hover:text-white bg-slate-900 border border-slate-800 hover:border-slate-700 rounded-lg transition-all"
           >
             <Settings className="w-4 h-4 text-slate-400 shrink-0" />
             <span className="hidden xl:inline">Settings</span>

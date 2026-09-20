@@ -260,7 +260,93 @@ func (c *CameraClient) SetMotionDetection(ip, username, password string, channel
 		_ = dataV1
 	}
 
-	// Normal / Standard schema
+	// 1. If polygon coordinates are provided (3+ points), prioritize regionType="region" without gridMap
+	// so the camera firmware preserves the exact polygon rather than replacing it with the grid bounding box.
+	if len(m.Coordinates) >= 3 {
+		pts := make([]Point, len(m.Coordinates))
+		copy(pts, m.Coordinates)
+
+		// Hikvision polygon motion requires at least 4 non-collinear vertices and at most 10 vertices
+		if len(pts) == 3 {
+			p1 := pts[0]
+			p3 := pts[2]
+			midX := (p3.X + p1.X) / 2
+			midY := (p3.Y + p1.Y) / 2
+			dx := p1.X - p3.X
+			dy := p1.Y - p3.Y
+			offX := -dy / 50
+			if offX == 0 {
+				offX = 2
+			}
+			offY := dx / 50
+			if offY == 0 {
+				offY = 2
+			}
+			nx := midX + offX
+			ny := midY + offY
+			if nx < 0 {
+				nx = 0
+			} else if nx > 1000 {
+				nx = 1000
+			}
+			if ny < 0 {
+				ny = 0
+			} else if ny > 1000 {
+				ny = 1000
+			}
+			pts = append(pts, Point{X: nx, Y: ny})
+		} else if len(pts) > 10 {
+			pts = pts[:10]
+		}
+
+		var coordsXML strings.Builder
+		for _, pt := range pts {
+			camY := 1000 - pt.Y
+			if camY < 0 {
+				camY = 0
+			} else if camY > 1000 {
+				camY = 1000
+			}
+			coordsXML.WriteString(fmt.Sprintf(`
+            <RegionCoordinates>
+              <positionX>%d</positionX>
+              <positionY>%d</positionY>
+            </RegionCoordinates>`, pt.X, camY))
+		}
+
+		targetTypeXML := ""
+		if m.TargetType != "" {
+			targetTypeXML = fmt.Sprintf("\n    <targetType>%s</targetType>", escapeXML(m.TargetType))
+		}
+
+		// Modern ISAPI 2.0 with regionType "region" (no Grid or gridMap, prevents firmware bounding-box overwrite)
+		payloadRegion := fmt.Sprintf(`<?xml version="1.0" encoding="UTF-8"?>
+<MotionDetection version="2.0" xmlns="http://www.hikvision.com/ver20/XMLSchema">
+  <enabled>%t</enabled>
+  <enableHighlight>%t</enableHighlight>
+  <regionType>region</regionType>
+  <MotionDetectionLayout version="2.0" xmlns="http://www.hikvision.com/ver20/XMLSchema">
+    <sensitivityLevel>%d</sensitivityLevel>
+    <layout>
+      <RegionList size="1">
+        <Region>
+          <id>1</id>
+          <RegionCoordinatesList>%s
+          </RegionCoordinatesList>
+        </Region>
+      </RegionList>
+    </layout>%s
+  </MotionDetectionLayout>
+</MotionDetection>`, m.Enabled, m.EnableHighlight, m.Sensitivity, coordsXML.String(), targetTypeXML)
+
+		data, code, _, err := c.DoRequest(ip, username, password, "PUT", path, []byte(payloadRegion), "application/xml")
+		if err == nil && (code == http.StatusOK || code == http.StatusAccepted || code == http.StatusNoContent) {
+			return nil
+		}
+		_ = data
+	}
+
+	// Normal / Standard Grid schema
 	gridMapVal := m.GridMap
 	if gridMapVal == "" {
 		gridMapVal = strings.Repeat("fffffc", 15)
@@ -275,29 +361,12 @@ func (c *CameraClient) SetMotionDetection(ip, username, password string, channel
 		colGran = 22
 	}
 
-	var regionListXML string
-	if len(m.Coordinates) >= 3 {
-		var b strings.Builder
-		b.WriteString("\n      <RegionList size=\"1\">\n        <Region>\n          <id>1</id>\n          <RegionCoordinatesList>")
-		for _, pt := range m.Coordinates {
-			camY := 1000 - pt.Y
-			if camY < 0 {
-				camY = 0
-			} else if camY > 1000 {
-				camY = 1000
-			}
-			b.WriteString(fmt.Sprintf("\n            <RegionCoordinates><positionX>%d</positionX><positionY>%d</positionY></RegionCoordinates>", pt.X, camY))
-		}
-		b.WriteString("\n          </RegionCoordinatesList>\n        </Region>\n      </RegionList>")
-		regionListXML = b.String()
-	}
-
 	targetTypeXML := ""
 	if m.TargetType != "" {
 		targetTypeXML = fmt.Sprintf("\n    <targetType>%s</targetType>", escapeXML(m.TargetType))
 	}
 
-	// Payload 1: Modern ISAPI 2.0 MotionDetection with MotionDetectionLayout
+	// Payload 1: Modern ISAPI 2.0 MotionDetection with MotionDetectionLayout (grid)
 	payload1 := fmt.Sprintf(`<?xml version="1.0" encoding="UTF-8"?>
 <MotionDetection version="2.0" xmlns="http://www.hikvision.com/ver20/XMLSchema">
   <enabled>%t</enabled>
@@ -310,10 +379,10 @@ func (c *CameraClient) SetMotionDetection(ip, username, password string, channel
   <MotionDetectionLayout version="2.0" xmlns="http://www.hikvision.com/ver20/XMLSchema">
     <sensitivityLevel>%d</sensitivityLevel>
     <layout>
-      <gridMap>%s</gridMap>%s
+      <gridMap>%s</gridMap>
     </layout>%s
   </MotionDetectionLayout>
-</MotionDetection>`, m.Enabled, m.EnableHighlight, rowGran, colGran, m.Sensitivity, escapeXML(gridMapVal), regionListXML, targetTypeXML)
+</MotionDetection>`, m.Enabled, m.EnableHighlight, rowGran, colGran, m.Sensitivity, escapeXML(gridMapVal), targetTypeXML)
 
 	// Payload 2: Classic ISAPI 1.0 MotionDetection with direct gridMap and MotionDetectionRegionList
 	payload2 := fmt.Sprintf(`<?xml version="1.0" encoding="UTF-8"?>

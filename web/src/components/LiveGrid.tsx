@@ -275,6 +275,18 @@ export const LiveGrid: React.FC<LiveGridProps> = ({
     return () => document.removeEventListener('visibilitychange', handleVisChange);
   }, []);
 
+  // Escape key listener to close fullscreen mode
+  useEffect(() => {
+    if (!fullscreenCam) return;
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') {
+        setFullscreenCam(null);
+      }
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [fullscreenCam]);
+
   if (cameras.length === 0) {
     return (
       <div className="flex flex-col items-center justify-center p-12 text-center glass-panel rounded-2xl border border-slate-800 my-8">
@@ -362,7 +374,7 @@ export const LiveGrid: React.FC<LiveGridProps> = ({
             ? 'grid-cols-1 md:grid-cols-2'
             : cameras.length <= 4
             ? 'grid-cols-1 sm:grid-cols-2'
-            : 'grid-cols-1 sm:grid-cols-2 lg:grid-cols-3'
+            : 'grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 2xl:grid-cols-5'
         }`}
       >
         {cameras.map((cam) => {
@@ -384,8 +396,8 @@ export const LiveGrid: React.FC<LiveGridProps> = ({
 
       {/* Fullscreen Camera Modal */}
       {fullscreenCam && (
-        <div className="fixed inset-0 z-50 bg-black/95 flex flex-col items-center justify-center p-2 sm:p-6">
-          <div className="w-full max-w-6xl flex items-center justify-between mb-3 text-white">
+        <div className="fixed inset-0 z-50 bg-black/95 flex flex-col p-2 sm:p-4 md:p-6">
+          <div className="w-full flex items-center justify-between mb-3 text-white shrink-0">
             <div className="flex items-center gap-2">
               <div className="flex items-center gap-1.5 px-2 py-0.5 rounded-full bg-rose-500/20 border border-rose-500/40 text-[10px] font-bold text-rose-400 uppercase tracking-wider">
                 <span className="w-1.5 h-1.5 rounded-full bg-rose-500 animate-pulse" />
@@ -414,7 +426,7 @@ export const LiveGrid: React.FC<LiveGridProps> = ({
             </div>
           </div>
 
-          <div className="relative w-full max-w-6xl aspect-video rounded-xl overflow-hidden bg-slate-900 border border-slate-800 shadow-2xl flex items-center justify-center">
+          <div className="relative w-full flex-1 min-h-0 rounded-xl overflow-hidden bg-slate-900 border border-slate-800 shadow-2xl flex items-center justify-center">
             <LiveStreamView
               cameraId={fullscreenCam.id}
               cameraName={fullscreenCam.name}

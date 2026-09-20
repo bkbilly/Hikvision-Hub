@@ -528,6 +528,45 @@ func (h *ISAPIHandler) SetTamper(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]interface{}{"success": true, "message": "Tamper detection settings updated"})
 }
 
+// GetPrivacyMask returns Privacy Mask configuration.
+func (h *ISAPIHandler) GetPrivacyMask(w http.ResponseWriter, r *http.Request) {
+	cam, err := h.getCamera(r)
+	if err != nil {
+		writeJSONError(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+
+	mask, err := h.camClient.GetPrivacyMask(cam.IP, cam.Username, cam.Password, 1)
+	if err != nil {
+		writeJSONError(w, "Failed to get privacy mask: "+err.Error(), http.StatusBadGateway)
+		return
+	}
+
+	writeJSON(w, http.StatusOK, mask)
+}
+
+// SetPrivacyMask updates Privacy Mask configuration.
+func (h *ISAPIHandler) SetPrivacyMask(w http.ResponseWriter, r *http.Request) {
+	cam, err := h.getCamera(r)
+	if err != nil {
+		writeJSONError(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+
+	var req hikvision.PrivacyMask
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeJSONError(w, "Invalid request body", http.StatusBadRequest)
+		return
+	}
+
+	if err := h.camClient.SetPrivacyMask(cam.IP, cam.Username, cam.Password, 1, req); err != nil {
+		writeJSONError(w, "Failed to set privacy mask: "+err.Error(), http.StatusBadGateway)
+		return
+	}
+
+	writeJSON(w, http.StatusOK, map[string]interface{}{"success": true, "message": "Privacy mask settings updated"})
+}
+
 // GetUnattendedBaggage returns Unattended Baggage smart detection configuration.
 func (h *ISAPIHandler) GetUnattendedBaggage(w http.ResponseWriter, r *http.Request) {
 	cam, err := h.getCamera(r)

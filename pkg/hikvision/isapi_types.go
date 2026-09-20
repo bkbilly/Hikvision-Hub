@@ -35,8 +35,16 @@ type NTPServer struct {
 	ID                  int      `xml:"id" json:"id"`
 	AddressingFormat    string   `xml:"addressingFormatType" json:"addressing_format_type"` // "hostname" or "ipaddress"
 	HostName            string   `xml:"hostName" json:"host_name"`
+	IPAddress           string   `xml:"ipAddress" json:"ip_address,omitempty"`
+	IPv6Address         string   `xml:"ipv6Address" json:"ipv6_address,omitempty"`
 	PortNo              int      `xml:"portNo" json:"port_no"`
 	SynchronizeInterval int      `xml:"synchronizeInterval" json:"synchronize_interval"` // minutes
+}
+
+// NTPServerList represents a list of NTP servers returned by /ISAPI/System/time/ntpServers.
+type NTPServerList struct {
+	XMLName xml.Name    `xml:"NTPServerList"`
+	Servers []NTPServer `xml:"NTPServer"`
 }
 
 // Point represents a normalized 2D coordinate (0..1000).
@@ -221,6 +229,21 @@ type TamperDetection struct {
 	Coordinates []Point  `json:"coordinates,omitempty"`
 }
 
+// PrivacyMaskRegion represents one privacy mask rectangle (4 coordinates).
+type PrivacyMaskRegion struct {
+	ID          int     `json:"id"`
+	Enabled     bool    `json:"enabled"`
+	Coordinates []Point `json:"coordinates"` // 4 corners in normalized (0..1000) coordinates
+}
+
+// PrivacyMask represents camera privacy masking configuration.
+type PrivacyMask struct {
+	Enabled                bool                `json:"enabled"`
+	NormalizedScreenWidth  int                 `json:"normalized_screen_width,omitempty"`
+	NormalizedScreenHeight int                 `json:"normalized_screen_height,omitempty"`
+	Regions                []PrivacyMaskRegion `json:"regions"`
+}
+
 // HddInfo represents an SD card, HDD, or NAS volume on the camera.
 type HddInfo struct {
 	ID          int    `json:"id"`
@@ -255,6 +278,7 @@ type CameraCapabilities struct {
 	HasLineDetection       bool     `json:"has_line_detection"`
 	HasIntrusionDetection  bool     `json:"has_intrusion_detection"`
 	HasTamperDetection     bool     `json:"has_tamper_detection"`
+	HasPrivacyMask         bool     `json:"has_privacy_mask"`
 	HasUnattendedBaggage   bool     `json:"has_unattended_baggage"`
 	HasObjectRemoval       bool     `json:"has_object_removal"`
 	HasRegionEntrance      bool     `json:"has_region_entrance"`

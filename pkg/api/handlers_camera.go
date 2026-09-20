@@ -460,3 +460,102 @@ func (h *CameraHandler) DiscoverPath(w http.ResponseWriter, r *http.Request) {
 		"dirs":    dirs,
 	})
 }
+
+type DiscoveredCameraPublic struct {
+	hikvision.DiscoveredDevice
+	AlreadyAdded       bool   `json:"already_added"`
+	ExistingCameraID   *int64 `json:"existing_camera_id,omitempty"`
+	ExistingCameraName string `json:"existing_camera_name,omitempty"`
+}
+
+type CameraDiscoveryResponse struct {
+	Cameras        []DiscoveredCameraPublic `json:"cameras"`
+	AvailablePaths []string                 `json:"available_paths"`
+}
+
+func (h *CameraHandler) Discover(w http.ResponseWriter, r *http.Request) {
+	devices, _ := hikvision.DiscoverDevices(2 * time.Second)
+
+	cameras, _ := h.db.ListCameras()
+	existingByIP := make(map[string]models.Camera)
+	existingPaths := make([]string, 0, len(cameras))
+	for _, c := range cameras {
+		existingByIP[c.IP] = c
+		if c.Path != "" {
+			existingPaths = append(existingPaths, c.Path)
+		}
+	}
+
+	publicList := make([]DiscoveredCameraPublic, 0, len(devices))
+	for _, dev := range devices {
+		item := DiscoveredCameraPublic{
+			DiscoveredDevice: dev,
+		}
+		if existing, ok := existingByIP[dev.IP]; ok {
+			item.AlreadyAdded = true
+			camID := existing.ID
+			item.ExistingCameraID = &camID
+			item.ExistingCameraName = existing.Name
+		}
+		publicList = append(publicList, item)
+	}
+
+	availablePaths := hikvision.FindAvailableStoragePaths(existingPaths)
+	if availablePaths == nil {
+		availablePaths = []string{}
+	}
+
+	writeJSON(w, http.StatusOK, CameraDiscoveryResponse{
+		Cameras:        publicList,
+		AvailablePaths: availablePaths,
+	})
+}
+
+type ProbeCameraRequest struct {
+	IP       string `json:"ip"`
+	Username string `json:"username"`
+	Password string `json:"password"`
+}
+
+func (h *CameraHandler) Probe(w http.ResponseWriter, r *http.Request) {
+	var req ProbeCameraRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeJSONError(w, "Invalid request body", http.StatusBadRequest)
+		return
+	}
+
+	dev, err := hikvision.ProbeDeviceIP(req.IP, h.camClient, req.Username, req.Password)
+	if err != nil {
+		writeJSON(w, http.StatusOK, map[string]interface{}{
+			"success": false,
+			"message": err.Error(),
+		})
+		return
+	}
+
+	var (
+		alreadyAdded       bool
+		existingCameraID   *int64
+		existingCameraName string
+	)
+
+	cameras, _ := h.db.ListCameras()
+	for _, c := range cameras {
+		if c.IP == dev.IP {
+			alreadyAdded = true
+			camID := c.ID
+			existingCameraID = &camID
+			existingCameraName = c.Name
+			break
+		}
+	}
+
+	writeJSON(w, http.StatusOK, map[string]interface{}{
+		"success":              true,
+		"device":               dev,
+		"already_added":        alreadyAdded,
+		"existing_camera_id":   existingCameraID,
+		"existing_camera_name": existingCameraName,
+	})
+}
+

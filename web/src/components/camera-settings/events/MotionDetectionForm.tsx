@@ -158,7 +158,7 @@ export const MotionDetectionForm: React.FC<MotionDetectionFormProps> = ({
                       onClick={onStartNormalMotionPolygon}
                       className="px-2.5 py-1 bg-emerald-500/10 hover:bg-emerald-500/20 border border-emerald-500/30 text-emerald-400 rounded-lg text-xs font-medium flex items-center gap-1.5 transition-colors cursor-pointer"
                     >
-                      <Edit3 className="w-3.5 h-3.5" /> Draw Polygon Area (3+ Pts)
+                      <Edit3 className="w-3.5 h-3.5" /> Draw Polygon Area (4-10 Pts)
                     </button>
                     {motion.coordinates && motion.coordinates.length >= 3 && (
                       <button

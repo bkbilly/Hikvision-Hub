@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import type { Camera, SystemStatus } from '../types';
+import type { Camera, DiscoveredDevice, SystemStatus } from '../types';
 import { api } from '../api';
 import { 
   X, 
@@ -19,7 +19,9 @@ import {
   Server,
   ChevronUp,
   ChevronDown,
-  Sliders
+  Sliders,
+  Radio,
+  Sparkles
 } from 'lucide-react';
 
 interface SettingsModalProps {
@@ -46,6 +48,13 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
   const [pathDiscovery, setPathDiscovery] = useState<{ valid?: boolean; message?: string; dirs?: any[] } | null>(null);
   const [isDiscovering, setIsDiscovering] = useState<boolean>(false);
 
+  // Auto-discovery state
+  const [discoveredDevices, setDiscoveredDevices] = useState<DiscoveredDevice[]>([]);
+  const [availablePaths, setAvailablePaths] = useState<string[]>([]);
+  const [isScanningNetwork, setIsScanningNetwork] = useState<boolean>(false);
+  const [isProbingIP, setIsProbingIP] = useState<boolean>(false);
+  const [probeMessage, setProbeMessage] = useState<{ success?: boolean; text?: string } | null>(null);
+
   // System status state
   const [systemStatus, setSystemStatus] = useState<SystemStatus | null>(null);
   const [isScanning, setIsScanning] = useState<boolean>(false);
@@ -61,6 +70,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
   useEffect(() => {
     if (isOpen) {
       loadSystemStatus();
+      handleDiscoverNetwork();
     }
   }, [isOpen]);
 
@@ -71,6 +81,77 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
       setIsScanning(res.is_scanning);
     } catch (err) {
       console.error('Failed to load system status', err);
+    }
+  };
+
+  const handleDiscoverNetwork = async () => {
+    setIsScanningNetwork(true);
+    try {
+      const res = await api.discoverCameras();
+      setDiscoveredDevices(res.cameras || []);
+      setAvailablePaths(res.available_paths || []);
+    } catch (err) {
+      console.error('Failed to discover cameras on network', err);
+    } finally {
+      setIsScanningNetwork(false);
+    }
+  };
+
+  const handleSelectDiscoveredDevice = (dev: DiscoveredDevice) => {
+    setEditingCamera((prev) => {
+      const suggestedPath = prev?.path || (availablePaths.length === 1 ? availablePaths[0] : '');
+      return {
+        ...prev,
+        name: dev.name || dev.model || prev?.name || '',
+        ip: dev.ip,
+        is_isapi: dev.is_isapi,
+        path: suggestedPath,
+      };
+    });
+    setTestResult(null);
+    setPathDiscovery(null);
+    setProbeMessage({
+      success: true,
+      text: `Auto-selected ${dev.model || dev.name} (${dev.ip}) • Protocol: ${dev.is_isapi ? 'Hikvision ISAPI' : dev.protocol}`,
+    });
+  };
+
+  const handleProbeIP = async () => {
+    if (!editingCamera?.ip) {
+      alert('Please enter an IP address first');
+      return;
+    }
+    setIsProbingIP(true);
+    setProbeMessage(null);
+    try {
+      const res = await api.probeCamera({
+        ip: editingCamera.ip,
+        username: editingCamera.username || 'admin',
+        password: cameraPassword || undefined,
+      });
+      if (res.success && res.device) {
+        setEditingCamera((prev) => ({
+          ...prev,
+          name: prev?.name ? prev.name : (res.device?.name || res.device?.model || prev?.name),
+          is_isapi: res.device?.is_isapi ?? prev?.is_isapi,
+        }));
+        setProbeMessage({
+          success: true,
+          text: `Identified: ${res.device.model || res.device.name} (${res.device.manufacturer}) ${res.already_added ? '• Already added' : '• Ready to add'}`,
+        });
+      } else {
+        setProbeMessage({
+          success: false,
+          text: res.message || 'No camera responded on this IP',
+        });
+      }
+    } catch (err: any) {
+      setProbeMessage({
+        success: false,
+        text: err.message || 'Failed to detect camera at this IP',
+      });
+    } finally {
+      setIsProbingIP(false);
     }
   };
 
@@ -94,6 +175,8 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
       setCameraPassword('');
       setTestResult(null);
       setPathDiscovery(null);
+      setProbeMessage(null);
+      handleDiscoverNetwork();
       onCamerasUpdated();
     } catch (err: any) {
       alert(err.message || 'Failed to save camera');
@@ -299,6 +382,111 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                     </button>
                   </div>
 
+                  {/* Auto-Discovery Network Panel (when adding new camera) */}
+                  {!editingCamera.id && (
+                    <div className="p-3 bg-slate-900/90 border border-slate-800 rounded-xl space-y-2.5">
+                      <div className="flex items-center justify-between">
+                        <div className="flex items-center gap-2">
+                          <Radio className="w-4 h-4 text-blue-400 animate-pulse" />
+                          <span className="text-xs font-semibold text-slate-200">
+                            Auto-Discovered Cameras on Network
+                          </span>
+                          {discoveredDevices.length > 0 && (
+                            <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-blue-900/60 text-blue-300 font-mono">
+                              {discoveredDevices.length} found
+                            </span>
+                          )}
+                        </div>
+                        <button
+                          type="button"
+                          onClick={handleDiscoverNetwork}
+                          disabled={isScanningNetwork}
+                          className="px-2.5 py-1 text-xs bg-slate-800 hover:bg-slate-700 text-slate-300 rounded-lg flex items-center gap-1.5 transition-colors disabled:opacity-50"
+                        >
+                          <RefreshCw className={`w-3 h-3 ${isScanningNetwork ? 'animate-spin text-blue-400' : ''}`} />
+                          <span>{isScanningNetwork ? 'Scanning...' : 'Scan Again'}</span>
+                        </button>
+                      </div>
+
+                      {isScanningNetwork && discoveredDevices.length === 0 && (
+                        <div className="py-3 text-center text-xs text-slate-400 flex items-center justify-center gap-2">
+                          <RefreshCw className="w-4 h-4 animate-spin text-blue-400" />
+                          <span>Probing local network via SADP & ONVIF...</span>
+                        </div>
+                      )}
+
+                      {discoveredDevices.length > 0 && (
+                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 max-h-44 overflow-y-auto pr-0.5">
+                          {discoveredDevices.map((dev) => {
+                            const isSelected = editingCamera.ip === dev.ip;
+                            return (
+                              <button
+                                key={dev.ip}
+                                type="button"
+                                onClick={() => handleSelectDiscoveredDevice(dev)}
+                                className={`p-2.5 rounded-lg border text-left transition-all flex items-center justify-between gap-2 ${
+                                  isSelected
+                                    ? 'bg-blue-950/50 border-blue-500 ring-1 ring-blue-500/40'
+                                    : dev.already_added
+                                    ? 'bg-slate-900/40 border-slate-800/80 opacity-60 hover:opacity-100 hover:border-slate-700'
+                                    : 'bg-slate-900/80 border-slate-700 hover:border-blue-500/60 hover:bg-slate-850'
+                                }`}
+                              >
+                                <div className="min-w-0 flex-1">
+                                  <div className="font-semibold text-xs text-white truncate flex items-center gap-1.5">
+                                    <span className="truncate">{dev.model || dev.name}</span>
+                                    {dev.is_isapi && (
+                                      <span className="text-[9px] px-1 py-0.2 rounded bg-amber-500/20 text-amber-300 font-medium shrink-0">
+                                        ISAPI
+                                      </span>
+                                    )}
+                                  </div>
+                                  <div className="text-[11px] text-slate-400 font-mono mt-0.5 flex items-center gap-1.5 truncate">
+                                    <span>{dev.ip}</span>
+                                    {dev.mac && (
+                                      <>
+                                        <span>&bull;</span>
+                                        <span className="text-[10px] text-slate-500 truncate">{dev.mac}</span>
+                                      </>
+                                    )}
+                                  </div>
+                                </div>
+
+                                {dev.already_added ? (
+                                  <span className="text-[10px] px-1.5 py-0.5 rounded bg-slate-800 text-slate-400 shrink-0 font-medium">
+                                    {dev.existing_camera_name ? dev.existing_camera_name : 'Added'}
+                                  </span>
+                                ) : (
+                                  <span className="text-[10px] px-2 py-0.5 rounded bg-emerald-950/80 border border-emerald-800 text-emerald-300 shrink-0 flex items-center gap-1 font-medium hover:bg-emerald-900">
+                                    <Sparkles className="w-2.5 h-2.5" />
+                                    Auto-fill
+                                  </span>
+                                )}
+                              </button>
+                            );
+                          })}
+                        </div>
+                      )}
+
+                      {probeMessage && (
+                        <div
+                          className={`p-2 rounded-lg text-xs flex items-center gap-1.5 ${
+                            probeMessage.success
+                              ? 'bg-emerald-950/60 text-emerald-300 border border-emerald-800'
+                              : 'bg-rose-950/60 text-rose-300 border border-rose-800'
+                          }`}
+                        >
+                          {probeMessage.success ? (
+                            <CheckCircle className="w-3.5 h-3.5 shrink-0" />
+                          ) : (
+                            <AlertCircle className="w-3.5 h-3.5 shrink-0" />
+                          )}
+                          <span>{probeMessage.text}</span>
+                        </div>
+                      )}
+                    </div>
+                  )}
+
                   <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 sm:gap-4">
                     <div>
                       <label className="block text-xs font-medium text-slate-300 mb-1">
@@ -318,14 +506,26 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                       <label className="block text-xs font-medium text-slate-300 mb-1">
                         Camera IP Address *
                       </label>
-                      <input
-                        type="text"
-                        required
-                        value={editingCamera.ip || ''}
-                        onChange={(e) => setEditingCamera({ ...editingCamera, ip: e.target.value })}
-                        placeholder="e.g. 192.168.1.160"
-                        className="w-full bg-slate-900 border border-slate-700/80 rounded-lg px-3 py-2 text-xs sm:text-sm text-white focus:outline-none focus:border-blue-500 font-mono"
-                      />
+                      <div className="flex gap-1.5">
+                        <input
+                          type="text"
+                          required
+                          value={editingCamera.ip || ''}
+                          onChange={(e) => setEditingCamera({ ...editingCamera, ip: e.target.value })}
+                          placeholder="e.g. 192.168.1.160"
+                          className="flex-1 bg-slate-900 border border-slate-700/80 rounded-lg px-3 py-2 text-xs sm:text-sm text-white focus:outline-none focus:border-blue-500 font-mono"
+                        />
+                        <button
+                          type="button"
+                          onClick={handleProbeIP}
+                          disabled={isProbingIP || !editingCamera.ip}
+                          title="Auto-detect model and ISAPI for this IP"
+                          className="px-2.5 py-2 bg-slate-800 hover:bg-slate-700 border border-slate-700 text-slate-300 rounded-lg text-xs font-medium flex items-center gap-1 transition-colors disabled:opacity-40"
+                        >
+                          <Radio className={`w-3.5 h-3.5 ${isProbingIP ? 'animate-pulse text-blue-400' : ''}`} />
+                          <span className="hidden sm:inline">{isProbingIP ? 'Detecting...' : 'Detect'}</span>
+                        </button>
+                      </div>
                     </div>
                   </div>
 
@@ -352,6 +552,22 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                         {isDiscovering ? 'Checking...' : 'Check Path'}
                       </button>
                     </div>
+                    {availablePaths.length > 0 && (
+                      <div className="mt-1.5 flex flex-wrap items-center gap-1.5">
+                        <span className="text-[11px] text-slate-400">Available storage paths:</span>
+                        {availablePaths.map((p) => (
+                          <button
+                            key={p}
+                            type="button"
+                            onClick={() => setEditingCamera({ ...editingCamera, path: p })}
+                            title={p}
+                            className="text-[10px] font-mono px-2 py-0.5 rounded bg-slate-800 hover:bg-blue-900/60 hover:text-blue-300 border border-slate-700 text-slate-300 transition-colors truncate max-w-[240px]"
+                          >
+                            {p}
+                          </button>
+                        ))}
+                      </div>
+                    )}
                     {pathDiscovery && (
                       <div className={`mt-2 p-2 rounded-lg text-xs flex items-center gap-1.5 ${
                         pathDiscovery.valid ? 'bg-emerald-950/60 text-emerald-300 border border-emerald-800' : 'bg-rose-950/60 text-rose-300 border border-rose-800'
@@ -453,29 +669,94 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
               ) : (
                 /* Camera List */
                 <div className="space-y-3">
-                  <div className="flex items-center justify-between mb-2">
+                  {discoveredDevices.some((d) => !d.already_added) && (
+                    <div className="p-3 bg-blue-950/40 border border-blue-800/80 rounded-xl flex items-center justify-between gap-3">
+                      <div className="flex items-center gap-2.5 min-w-0">
+                        <div className="w-8 h-8 rounded-lg bg-blue-900/60 flex items-center justify-center shrink-0 text-blue-400">
+                          <Radio className="w-4 h-4 animate-pulse" />
+                        </div>
+                        <div className="text-xs min-w-0">
+                          <span className="font-semibold text-blue-200 block">
+                            {discoveredDevices.filter((d) => !d.already_added).length} unconfigured camera(s) detected on your network
+                          </span>
+                          <p className="text-[11px] text-slate-400 truncate">
+                            {discoveredDevices
+                              .filter((d) => !d.already_added)
+                              .map((d) => `${d.model || d.name} (${d.ip})`)
+                              .join(', ')}
+                          </p>
+                        </div>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          const first = discoveredDevices.find((d) => !d.already_added);
+                          if (first) {
+                            setEditingCamera({
+                              name: first.name || first.model,
+                              ip: first.ip,
+                              is_isapi: first.is_isapi,
+                              path: availablePaths.length === 1 ? availablePaths[0] : '',
+                              username: 'admin',
+                              enabled: true,
+                              sort_order: cameras.length,
+                            });
+                            setCameraPassword('');
+                            setTestResult(null);
+                            setPathDiscovery(null);
+                            setProbeMessage({
+                              success: true,
+                              text: `Auto-selected ${first.model || first.name} (${first.ip}) • Protocol: ${first.is_isapi ? 'Hikvision ISAPI' : first.protocol}`,
+                            });
+                          }
+                        }}
+                        className="px-3 py-1.5 bg-blue-600 hover:bg-blue-500 text-white text-xs font-medium rounded-lg shrink-0 transition-all shadow-md shadow-blue-600/20 flex items-center gap-1"
+                      >
+                        <Sparkles className="w-3.5 h-3.5" />
+                        Quick Add
+                      </button>
+                    </div>
+                  )}
+
+                  <div className="flex items-center justify-between mb-2 gap-2 flex-wrap">
                     <p className="text-xs text-slate-400">
                       Manage connected Hikvision/HiLook cameras and their local storage folders.
                     </p>
-                    <button
-                      onClick={() => {
-                        setEditingCamera({
-                          name: '',
-                          path: '',
-                          ip: '',
-                          username: 'admin',
-                          enabled: true,
-                          sort_order: cameras.length,
-                        });
-                        setCameraPassword('');
-                        setTestResult(null);
-                        setPathDiscovery(null);
-                      }}
-                      className="px-3 py-1.5 bg-blue-600 hover:bg-blue-500 text-white text-xs font-medium rounded-lg flex items-center gap-1.5 shadow-md transition-all"
-                    >
-                      <Plus className="w-3.5 h-3.5" />
-                      Add Camera
-                    </button>
+                    <div className="flex items-center gap-2">
+                      <button
+                        type="button"
+                        onClick={handleDiscoverNetwork}
+                        disabled={isScanningNetwork}
+                        title="Scan local network for cameras"
+                        className="px-2.5 py-1.5 bg-slate-900 hover:bg-slate-800 border border-slate-700 text-slate-300 text-xs font-medium rounded-lg flex items-center gap-1.5 transition-colors disabled:opacity-50"
+                      >
+                        <Radio className={`w-3.5 h-3.5 ${isScanningNetwork ? 'animate-pulse text-blue-400' : ''}`} />
+                        <span>{isScanningNetwork ? 'Scanning...' : 'Scan Network'}</span>
+                      </button>
+                      <button
+                        onClick={() => {
+                          setEditingCamera({
+                            name: '',
+                            path: availablePaths.length === 1 ? availablePaths[0] : '',
+                            ip: '',
+                            username: 'admin',
+                            enabled: true,
+                            sort_order: cameras.length,
+                          });
+                          setCameraPassword('');
+                          setTestResult(null);
+                          setPathDiscovery(null);
+                          setProbeMessage(null);
+                          if (discoveredDevices.length === 0) {
+                            handleDiscoverNetwork();
+                          }
+                        }}
+                        className="px-3 py-1.5 bg-blue-600 hover:bg-blue-500 text-white text-xs font-medium rounded-lg flex items-center gap-1.5 shadow-md transition-all"
+                      >
+                        <Plus className="w-3.5 h-3.5" />
+                        Add Camera
+                      </button>
+                    </div>
                   </div>
 
                   {cameras.length === 0 ? (

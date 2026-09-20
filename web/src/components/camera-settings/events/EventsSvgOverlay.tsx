@@ -621,14 +621,31 @@ export const EventsSvgOverlay: React.FC<EventsSvgOverlayProps> = ({
       )}
 
       {/* --- OVERLAY 7: VIDEO TAMPERING --- */}
-      {activeSmartEvent === 'tamper' && tamper && (
-        render4PointRegionSVG(
-          tPts,
-          tamper.enabled,
-          '#f43f5e',
-          'rgba(244, 63, 94, 0.25)',
-          '#ffffff'
-        )
+      {activeSmartEvent === 'tamper' && (
+        <>
+          {/* Live 90° Rectangle Drawing Preview */}
+          {drawStep === 'second' && drawExpertRectCorner1 && drawHoverPt && (
+            <rect
+              x={Math.min(drawExpertRectCorner1.x, drawHoverPt.x)}
+              y={Math.min(drawExpertRectCorner1.y, drawHoverPt.y)}
+              width={Math.abs(drawHoverPt.x - drawExpertRectCorner1.x)}
+              height={Math.abs(drawHoverPt.y - drawExpertRectCorner1.y)}
+              fill="rgba(244, 63, 94, 0.25)"
+              stroke="#f43f5e"
+              strokeWidth="4"
+              strokeDasharray="8,6"
+              className="pointer-events-none animate-pulse"
+            />
+          )}
+
+          {!drawStep && tamper && render4PointRegionSVG(
+            tPts,
+            tamper.enabled,
+            '#f43f5e',
+            'rgba(244, 63, 94, 0.25)',
+            '#ffffff'
+          )}
+        </>
       )}
 
       {/* --- OVERLAY 8: UNATTENDED BAGGAGE --- */}

@@ -3,6 +3,7 @@ package hikvision
 import (
 	"encoding/xml"
 	"fmt"
+	"net"
 	"net/http"
 	"strconv"
 	"strings"
@@ -57,20 +58,33 @@ func (c *CameraClient) GetTime(ip, username, password string) (*DeviceTime, erro
 
 // SetTime updates the camera time and timezone.
 func (c *CameraClient) SetTime(ip, username, password string, t DeviceTime) error {
+	tz := t.TimeZone
+	if tz == "" {
+		if existing, err := c.GetTime(ip, username, password); err == nil && existing != nil && existing.TimeZone != "" {
+			tz = existing.TimeZone
+		}
+	}
+	localTime := t.LocalTime
+	if localTime == "" && t.TimeMode == "NTP" {
+		if existing, err := c.GetTime(ip, username, password); err == nil && existing != nil && existing.LocalTime != "" {
+			localTime = existing.LocalTime
+		}
+	}
+
 	var payload string
-	if t.TimeZone != "" {
+	if tz != "" {
 		payload = fmt.Sprintf(`<?xml version="1.0" encoding="UTF-8"?>
 <Time version="1.0" xmlns="http://www.hikvision.com/ver20/XMLSchema">
   <timeMode>%s</timeMode>
   <localTime>%s</localTime>
   <timeZone>%s</timeZone>
-</Time>`, escapeXML(t.TimeMode), escapeXML(t.LocalTime), escapeXML(t.TimeZone))
+</Time>`, escapeXML(t.TimeMode), escapeXML(localTime), escapeXML(tz))
 	} else {
 		payload = fmt.Sprintf(`<?xml version="1.0" encoding="UTF-8"?>
 <Time version="1.0" xmlns="http://www.hikvision.com/ver20/XMLSchema">
   <timeMode>%s</timeMode>
   <localTime>%s</localTime>
-</Time>`, escapeXML(t.TimeMode), escapeXML(t.LocalTime))
+</Time>`, escapeXML(t.TimeMode), escapeXML(localTime))
 	}
 
 	data, code, _, err := c.DoRequest(ip, username, password, "PUT", "/ISAPI/System/time", []byte(payload), "application/xml")
@@ -136,13 +150,30 @@ func (c *CameraClient) GetNTP(ip, username, password string) (*NTPServer, error)
 
 	var ntp NTPServer
 	if err := xml.Unmarshal(data, &ntp); err != nil {
-		str := string(data)
-		ntp.HostName = extractXMLTag(str, "hostName")
-		ntp.AddressingFormat = extractXMLTag(str, "addressingFormatType")
-		port, _ := strconv.Atoi(extractXMLTag(str, "portNo"))
-		ntp.PortNo = port
-		interval, _ := strconv.Atoi(extractXMLTag(str, "synchronizeInterval"))
-		ntp.SynchronizeInterval = interval
+		var list NTPServerList
+		if errList := xml.Unmarshal(data, &list); errList == nil && len(list.Servers) > 0 {
+			ntp = list.Servers[0]
+		} else {
+			str := string(data)
+			ntp.HostName = extractXMLTag(str, "hostName")
+			ntp.IPAddress = extractXMLTag(str, "ipAddress")
+			ntp.IPv6Address = extractXMLTag(str, "ipv6Address")
+			ntp.AddressingFormat = extractXMLTag(str, "addressingFormatType")
+			port, _ := strconv.Atoi(extractXMLTag(str, "portNo"))
+			ntp.PortNo = port
+			interval, _ := strconv.Atoi(extractXMLTag(str, "synchronizeInterval"))
+			ntp.SynchronizeInterval = interval
+		}
+	}
+
+	// Normalize host_name and ip_address so client always receives the configured server address
+	if ntp.HostName == "" && ntp.IPAddress != "" {
+		ntp.HostName = ntp.IPAddress
+	} else if ntp.HostName == "" && ntp.IPv6Address != "" {
+		ntp.HostName = ntp.IPv6Address
+	}
+	if ntp.IPAddress == "" && ntp.HostName != "" {
+		ntp.IPAddress = ntp.HostName
 	}
 	if ntp.PortNo == 0 {
 		ntp.PortNo = 123
@@ -152,32 +183,56 @@ func (c *CameraClient) GetNTP(ip, username, password string) (*NTPServer, error)
 
 // SetNTP updates NTP server configuration.
 func (c *CameraClient) SetNTP(ip, username, password string, ntp NTPServer) error {
-	addrType := ntp.AddressingFormat
-	if addrType == "" {
-		addrType = "hostname"
+	target := strings.TrimSpace(ntp.HostName)
+	if target == "" {
+		target = strings.TrimSpace(ntp.IPAddress)
 	}
-	if ntp.PortNo == 0 {
+	if target == "" {
+		target = strings.TrimSpace(ntp.IPv6Address)
+	}
+	if target == "" {
+		return fmt.Errorf("ntp server host or IP address is required")
+	}
+
+	if ntp.PortNo <= 0 {
 		ntp.PortNo = 123
 	}
-	if ntp.SynchronizeInterval == 0 {
+	if ntp.SynchronizeInterval <= 0 {
 		ntp.SynchronizeInterval = 60
 	}
 
-	payload := fmt.Sprintf(`<?xml version="1.0" encoding="UTF-8"?>
+	isIP := net.ParseIP(target) != nil
+
+	var payload string
+	if isIP {
+		payload = fmt.Sprintf(`<?xml version="1.0" encoding="UTF-8"?>
 <NTPServer version="1.0" xmlns="http://www.hikvision.com/ver20/XMLSchema">
   <id>1</id>
-  <addressingFormatType>%s</addressingFormatType>
+  <addressingFormatType>ipaddress</addressingFormatType>
+  <ipAddress>%s</ipAddress>
+  <portNo>%d</portNo>
+  <synchronizeInterval>%d</synchronizeInterval>
+</NTPServer>`, escapeXML(target), ntp.PortNo, ntp.SynchronizeInterval)
+	} else {
+		payload = fmt.Sprintf(`<?xml version="1.0" encoding="UTF-8"?>
+<NTPServer version="1.0" xmlns="http://www.hikvision.com/ver20/XMLSchema">
+  <id>1</id>
+  <addressingFormatType>hostname</addressingFormatType>
   <hostName>%s</hostName>
   <portNo>%d</portNo>
   <synchronizeInterval>%d</synchronizeInterval>
-</NTPServer>`, escapeXML(addrType), escapeXML(ntp.HostName), ntp.PortNo, ntp.SynchronizeInterval)
+</NTPServer>`, escapeXML(target), ntp.PortNo, ntp.SynchronizeInterval)
+	}
 
 	data, code, _, err := c.DoRequest(ip, username, password, "PUT", "/ISAPI/System/time/ntpServers/1", []byte(payload), "application/xml")
-	if err != nil {
-		return err
-	}
-	if code != http.StatusOK && code != http.StatusAccepted {
-		return fmt.Errorf("failed to set NTP: status %d (resp: %s)", code, string(data))
+	if err != nil || (code != http.StatusOK && code != http.StatusAccepted) {
+		data2, code2, _, err2 := c.DoRequest(ip, username, password, "PUT", "/ISAPI/System/time/ntpServers", []byte(payload), "application/xml")
+		if err2 != nil || (code2 != http.StatusOK && code2 != http.StatusAccepted) {
+			if err != nil {
+				return err
+			}
+			return fmt.Errorf("failed to set NTP: status %d (resp: %s / %s)", code, string(data), string(data2))
+		}
 	}
 	return nil
 }
@@ -362,6 +417,12 @@ func (c *CameraClient) ProbeCapabilities(ip, username, password string) (*Camera
 	_, code, _, _ = c.DoRequest(ip, username, password, "GET", "/ISAPI/PTZCtrl/channels/1/capabilities", nil, "")
 	if code == http.StatusOK {
 		caps.HasPTZ = true
+	}
+
+	// 20. Privacy Mask
+	_, code, _, _ = c.DoRequest(ip, username, password, "GET", "/ISAPI/System/Video/inputs/channels/1/privacyMask", nil, "")
+	if code == http.StatusOK {
+		caps.HasPrivacyMask = true
 	}
 
 	return caps, nil

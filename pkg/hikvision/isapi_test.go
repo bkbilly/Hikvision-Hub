@@ -98,6 +98,75 @@ func TestISAPITimeAndSync(t *testing.T) {
 	}
 }
 
+func TestISAPINTPGetAndSet(t *testing.T) {
+	var receivedPUT string
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/ISAPI/System/time/ntpServers/1" {
+			if r.Method == "GET" {
+				w.Header().Set("Content-Type", "application/xml")
+				w.WriteHeader(http.StatusOK)
+				_, _ = w.Write([]byte(`<?xml version="1.0" encoding="UTF-8"?>
+<NTPServer version="2.0" xmlns="http://www.hikvision.com/ver20/XMLSchema">
+<id>1</id>
+<addressingFormatType>ipaddress</addressingFormatType>
+<ipAddress>192.168.2.150</ipAddress>
+<portNo>123</portNo>
+<synchronizeInterval>2</synchronizeInterval>
+</NTPServer>`))
+				return
+			}
+			if r.Method == "PUT" {
+				buf := make([]byte, 1024)
+				n, _ := r.Body.Read(buf)
+				receivedPUT = string(buf[:n])
+				w.WriteHeader(http.StatusOK)
+				_, _ = w.Write([]byte(`<ResponseStatus><statusCode>1</statusCode></ResponseStatus>`))
+				return
+			}
+		}
+		w.WriteHeader(http.StatusNotFound)
+	}))
+	defer ts.Close()
+
+	host := strings.TrimPrefix(ts.URL, "http://")
+	client := NewCameraClient()
+
+	ntp, err := client.GetNTP(host, "admin", "12345")
+	if err != nil {
+		t.Fatalf("GetNTP failed: %v", err)
+	}
+
+	if ntp.HostName != "192.168.2.150" {
+		t.Errorf("expected HostName '192.168.2.150', got '%s'", ntp.HostName)
+	}
+	if ntp.IPAddress != "192.168.2.150" {
+		t.Errorf("expected IPAddress '192.168.2.150', got '%s'", ntp.IPAddress)
+	}
+	if ntp.PortNo != 123 {
+		t.Errorf("expected PortNo 123, got %d", ntp.PortNo)
+	}
+	if ntp.SynchronizeInterval != 2 {
+		t.Errorf("expected SynchronizeInterval 2, got %d", ntp.SynchronizeInterval)
+	}
+
+	// Test SetNTP with an IP address
+	err = client.SetNTP(host, "admin", "12345", NTPServer{
+		HostName:            "192.168.2.150",
+		PortNo:              123,
+		SynchronizeInterval: 5,
+	})
+	if err != nil {
+		t.Fatalf("SetNTP failed: %v", err)
+	}
+
+	if !strings.Contains(receivedPUT, "<ipAddress>192.168.2.150</ipAddress>") {
+		t.Errorf("expected payload to contain <ipAddress>192.168.2.150</ipAddress>, got: %s", receivedPUT)
+	}
+	if !strings.Contains(receivedPUT, "<addressingFormatType>ipaddress</addressingFormatType>") {
+		t.Errorf("expected payload to contain <addressingFormatType>ipaddress</addressingFormatType>, got: %s", receivedPUT)
+	}
+}
+
 func TestISAPIImageSettings(t *testing.T) {
 	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
@@ -514,6 +583,32 @@ func TestISAPIMotionNormalAndExpert(t *testing.T) {
 	if !strings.Contains(receivedPUT, "<daySensitivityLevel>85</daySensitivityLevel>") || !strings.Contains(receivedPUT, "<motionDetectionType>expert</motionDetectionType>") {
 		t.Errorf("unexpected PUT body for expert motion: %s", receivedPUT)
 	}
+
+	// Test polygon normal motion: must emit regionType=region without gridMap
+	polyMotion := MotionDetection{
+		Enabled:     true,
+		Sensitivity: 60,
+		Coordinates: []Point{
+			{X: 183, Y: 200},
+			{X: 750, Y: 150},
+			{X: 880, Y: 600},
+			{X: 500, Y: 850},
+			{X: 220, Y: 650},
+		},
+		TargetType: "human",
+	}
+	if err := client.SetMotionDetection(host, "admin", "12345", 1, polyMotion); err != nil {
+		t.Fatalf("SetMotionDetection for polygon failed: %v", err)
+	}
+	if !strings.Contains(receivedPUT, "<regionType>region</regionType>") {
+		t.Errorf("expected <regionType>region</regionType> in PUT body, got: %s", receivedPUT)
+	}
+	if strings.Contains(receivedPUT, "<gridMap>") {
+		t.Errorf("expected NO <gridMap> in polygon PUT body, got: %s", receivedPUT)
+	}
+	if !strings.Contains(receivedPUT, "<positionX>183</positionX>") || !strings.Contains(receivedPUT, "<positionY>800</positionY>") {
+		t.Errorf("expected coordinates (183, 800) in PUT body, got: %s", receivedPUT)
+	}
 }
 
 func TestISAPIUnattendedBaggageAndObjectRemoval(t *testing.T) {
@@ -776,5 +871,84 @@ func TestLiveCamera2StreamSettings(t *testing.T) {
 		streamMain.Resolution, streamMain.FPS, streamMain.SupportedResolutions, streamMain.SupportedFPS)
 	if len(streamMain.SupportedResolutions) != 5 {
 		t.Errorf("expected exactly 5 resolutions on main-stream, got %d: %v", len(streamMain.SupportedResolutions), streamMain.SupportedResolutions)
+	}
+}
+
+func TestISAPIPrivacyMask(t *testing.T) {
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/ISAPI/System/Video/inputs/channels/1/privacyMask" {
+			http.NotFound(w, r)
+			return
+		}
+
+		if r.Method == "GET" {
+			w.Header().Set("Content-Type", "application/xml")
+			w.WriteHeader(http.StatusOK)
+			_, _ = w.Write([]byte(`<?xml version="1.0" encoding="UTF-8"?>
+<PrivacyMask version="2.0" xmlns="http://www.hikvision.com/ver20/XMLSchema">
+<enabled>true</enabled>
+<normalizedScreenSize>
+<normalizedScreenWidth>704</normalizedScreenWidth>
+<normalizedScreenHeight>480</normalizedScreenHeight>
+</normalizedScreenSize>
+<PrivacyMaskRegionList size="4">
+<PrivacyMaskRegion version="2.0" xmlns="http://www.hikvision.com/ver20/XMLSchema">
+<id>1</id>
+<enabled>true</enabled>
+<RegionCoordinatesList>
+<RegionCoordinates><positionX>70</positionX><positionY>48</positionY></RegionCoordinates>
+<RegionCoordinates><positionX>352</positionX><positionY>48</positionY></RegionCoordinates>
+<RegionCoordinates><positionX>352</positionX><positionY>240</positionY></RegionCoordinates>
+<RegionCoordinates><positionX>70</positionX><positionY>240</positionY></RegionCoordinates>
+</RegionCoordinatesList>
+</PrivacyMaskRegion>
+</PrivacyMaskRegionList>
+</PrivacyMask>`))
+			return
+		}
+
+		if r.Method == "PUT" {
+			w.Header().Set("Content-Type", "application/xml")
+			w.WriteHeader(http.StatusOK)
+			_, _ = w.Write([]byte(`<?xml version="1.0" encoding="UTF-8"?><ResponseStatus version="2.0"><statusCode>1</statusCode><statusString>OK</statusString></ResponseStatus>`))
+			return
+		}
+	}))
+	defer ts.Close()
+
+	host := strings.TrimPrefix(ts.URL, "http://")
+	client := NewCameraClient()
+
+	mask, err := client.GetPrivacyMask(host, "admin", "12345", 1)
+	if err != nil {
+		t.Fatalf("failed GetPrivacyMask: %v", err)
+	}
+	if !mask.Enabled {
+		t.Errorf("expected mask to be enabled")
+	}
+	if len(mask.Regions) != 1 {
+		t.Fatalf("expected 1 region, got %d", len(mask.Regions))
+	}
+	reg := mask.Regions[0]
+	if reg.ID != 1 || !reg.Enabled || len(reg.Coordinates) != 4 {
+		t.Errorf("unexpected region: %+v", reg)
+	}
+	// 70 / 704 * 1000 = ~99
+	// 240 / 480 * 1000 = 500 -> 1000 - 500 = 500 (minY)
+	// 48 / 480 * 1000 = 100 -> 1000 - 100 = 900 (maxY)
+	if reg.Coordinates[0].X < 90 || reg.Coordinates[0].X > 110 {
+		t.Errorf("unexpected X coord: %d", reg.Coordinates[0].X)
+	}
+	if reg.Coordinates[0].Y < 490 || reg.Coordinates[0].Y > 510 {
+		t.Errorf("unexpected Y coord: %d", reg.Coordinates[0].Y)
+	}
+	if reg.Coordinates[2].Y < 890 || reg.Coordinates[2].Y > 910 {
+		t.Errorf("unexpected maxY coord: %d", reg.Coordinates[2].Y)
+	}
+
+	// Test SetPrivacyMask
+	setErr := client.SetPrivacyMask(host, "admin", "12345", 1, *mask)
+	if setErr != nil {
+		t.Fatalf("failed SetPrivacyMask: %v", setErr)
 	}
 }

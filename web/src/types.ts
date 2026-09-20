@@ -12,6 +12,37 @@ export interface Camera {
   updated_at: string;
 }
 
+export interface DiscoveredDevice {
+  ip: string;
+  port: number;
+  model: string;
+  name: string;
+  serial_number: string;
+  mac: string;
+  firmware_version: string;
+  manufacturer: string;
+  protocol: string;
+  is_isapi: boolean;
+  activated: boolean;
+  already_added?: boolean;
+  existing_camera_id?: number;
+  existing_camera_name?: string;
+}
+
+export interface CameraDiscoveryResponse {
+  cameras: DiscoveredDevice[];
+  available_paths: string[];
+}
+
+export interface ProbeResponse {
+  success: boolean;
+  message?: string;
+  device?: DiscoveredDevice;
+  already_added?: boolean;
+  existing_camera_id?: number;
+  existing_camera_name?: string;
+}
+
 export interface RecordingSegment {
   id: number;
   camera_id: number;
@@ -89,6 +120,8 @@ export interface NTPServer {
   id: number;
   addressing_format_type: string;
   host_name: string;
+  ip_address?: string;
+  ipv6_address?: string;
   port_no: number;
   synchronize_interval: number;
 }
@@ -248,6 +281,19 @@ export interface TamperDetection {
   coordinates?: { x: number; y: number }[];
 }
 
+export interface PrivacyMaskRegion {
+  id: number;
+  enabled: boolean;
+  coordinates: Point[];
+}
+
+export interface PrivacyMask {
+  enabled: boolean;
+  normalized_screen_width?: number;
+  normalized_screen_height?: number;
+  regions: PrivacyMaskRegion[];
+}
+
 export interface HddInfo {
   id: number;
   name: string;
@@ -279,6 +325,7 @@ export interface CameraCapabilities {
   has_line_detection: boolean;
   has_intrusion_detection: boolean;
   has_tamper_detection: boolean;
+  has_privacy_mask?: boolean;
   has_unattended_baggage?: boolean;
   has_object_removal?: boolean;
   has_region_entrance?: boolean;

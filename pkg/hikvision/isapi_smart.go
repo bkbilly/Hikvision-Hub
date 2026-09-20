@@ -3,6 +3,7 @@ package hikvision
 import (
 	"fmt"
 	"net/http"
+	"regexp"
 	"strings"
 )
 
@@ -455,7 +456,40 @@ func (c *CameraClient) GetTamperDetection(ip, username, password string, channel
 	}
 
 	str := string(data)
-	coords := extractCoordinates(str)
+
+	// Tamper detection uses video input matrix coordinates (e.g. 704x480 or 1000x1000) with top-left origin (Y=0 at top)
+	sw := parseXMLIntAny(str, 1000, "normalizedScreenWidth", "screenWidth")
+	sh := parseXMLIntAny(str, 1000, "normalizedScreenHeight", "screenHeight")
+	if sw <= 0 {
+		sw = 704
+	}
+	if sh <= 0 {
+		sh = 480
+	}
+
+	reCoord := regexp.MustCompile(`(?is)<(?:Coordinates|RegionCoordinates)\b[^>]*>(.*?)</(?:Coordinates|RegionCoordinates)>`)
+	matches := reCoord.FindAllStringSubmatch(str, -1)
+	var coords []Point
+	for _, m := range matches {
+		x := parseXMLIntAny(m[1], -1, "positionX", "x")
+		y := parseXMLIntAny(m[1], -1, "positionY", "y")
+		if x >= 0 && y >= 0 {
+			normX := (x * 1000) / sw
+			normY := (y * 1000) / sh
+			if normX < 0 {
+				normX = 0
+			} else if normX > 1000 {
+				normX = 1000
+			}
+			if normY < 0 {
+				normY = 0
+			} else if normY > 1000 {
+				normY = 1000
+			}
+			coords = append(coords, Point{X: normX, Y: normY})
+		}
+	}
+
 	if len(coords) < 4 {
 		coords = []Point{
 			{X: 100, Y: 100},
@@ -479,27 +513,6 @@ func (c *CameraClient) SetTamperDetection(ip, username, password string, channel
 		channelID = 1
 	}
 
-	var coordsXML strings.Builder
-	if len(td.Coordinates) >= 4 {
-		coordsXML.WriteString("<RegionCoordinatesList>")
-		for _, pt := range td.Coordinates[:4] {
-			posX := pt.X
-			if posX < 0 {
-				posX = 0
-			} else if posX > 1000 {
-				posX = 1000
-			}
-			posY := 1000 - pt.Y
-			if posY < 0 {
-				posY = 0
-			} else if posY > 1000 {
-				posY = 1000
-			}
-			coordsXML.WriteString(fmt.Sprintf("<RegionCoordinates><positionX>%d</positionX><positionY>%d</positionY></RegionCoordinates>", posX, posY))
-		}
-		coordsXML.WriteString("</RegionCoordinatesList>")
-	}
-
 	paths := []string{
 		fmt.Sprintf("/ISAPI/System/Video/inputs/channels/%d/tamperDetection", channelID),
 		fmt.Sprintf("/ISAPI/Smart/TamperDetection/%d", channelID),
@@ -507,13 +520,82 @@ func (c *CameraClient) SetTamperDetection(ip, username, password string, channel
 		fmt.Sprintf("/ISAPI/System/Video/inputs/channels/%d/tamper", channelID),
 	}
 
-	// Payload 1: System Video Input with normalizedScreenSize
+	sw := 704
+	sh := 480
+	// Query current tamper settings to discover camera's native screen dimensions
+	for _, p := range paths {
+		if curData, curCode, _, curErr := c.DoRequest(ip, username, password, "GET", p, nil, ""); curErr == nil && curCode == http.StatusOK {
+			curStr := string(curData)
+			if parsedW := parseXMLIntAny(curStr, 0, "normalizedScreenWidth", "screenWidth"); parsedW > 0 {
+				sw = parsedW
+			}
+			if parsedH := parseXMLIntAny(curStr, 0, "normalizedScreenHeight", "screenHeight"); parsedH > 0 {
+				sh = parsedH
+			}
+			break
+		}
+	}
+
+	var coordsXML strings.Builder
+	if len(td.Coordinates) >= 4 {
+		minX := 1000
+		maxX := 0
+		minY := 1000
+		maxY := 0
+		for _, pt := range td.Coordinates[:4] {
+			if pt.X < minX {
+				minX = pt.X
+			}
+			if pt.X > maxX {
+				maxX = pt.X
+			}
+			if pt.Y < minY {
+				minY = pt.Y
+			}
+			if pt.Y > maxY {
+				maxY = pt.Y
+			}
+		}
+		if minX < 0 {
+			minX = 0
+		}
+		if maxX > 1000 {
+			maxX = 1000
+		}
+		if minY < 0 {
+			minY = 0
+		}
+		if maxY > 1000 {
+			maxY = 1000
+		}
+		if minX >= maxX {
+			maxX = minX + 100
+		}
+		if minY >= maxY {
+			maxY = minY + 100
+		}
+
+		rect := []Point{
+			{X: (minX * sw) / 1000, Y: (minY * sh) / 1000},
+			{X: (maxX * sw) / 1000, Y: (minY * sh) / 1000},
+			{X: (maxX * sw) / 1000, Y: (maxY * sh) / 1000},
+			{X: (minX * sw) / 1000, Y: (maxY * sh) / 1000},
+		}
+
+		coordsXML.WriteString("<RegionCoordinatesList>")
+		for _, pt := range rect {
+			coordsXML.WriteString(fmt.Sprintf("<RegionCoordinates><positionX>%d</positionX><positionY>%d</positionY></RegionCoordinates>", pt.X, pt.Y))
+		}
+		coordsXML.WriteString("</RegionCoordinatesList>")
+	}
+
+	// Payload 1: System Video Input with native normalizedScreenSize
 	payload1 := fmt.Sprintf(`<?xml version="1.0" encoding="UTF-8"?>
 <TamperDetection version="2.0" xmlns="http://www.hikvision.com/ver20/XMLSchema">
   <enabled>%t</enabled>
   <normalizedScreenSize>
-    <normalizedScreenWidth>1000</normalizedScreenWidth>
-    <normalizedScreenHeight>1000</normalizedScreenHeight>
+    <normalizedScreenWidth>%d</normalizedScreenWidth>
+    <normalizedScreenHeight>%d</normalizedScreenHeight>
   </normalizedScreenSize>
   <TamperDetectionRegionList size="1">
     <TamperDetectionRegion>
@@ -523,7 +605,7 @@ func (c *CameraClient) SetTamperDetection(ip, username, password string, channel
       %s
     </TamperDetectionRegion>
   </TamperDetectionRegionList>
-</TamperDetection>`, td.Enabled, td.Enabled, td.Sensitivity, coordsXML.String())
+</TamperDetection>`, td.Enabled, sw, sh, td.Enabled, td.Sensitivity, coordsXML.String())
 
 	// Payload 2: Modern Smart schema with normalizedScreenSize and root id
 	payload2 := fmt.Sprintf(`<?xml version="1.0" encoding="UTF-8"?>
@@ -531,8 +613,8 @@ func (c *CameraClient) SetTamperDetection(ip, username, password string, channel
   <id>%d</id>
   <enabled>%t</enabled>
   <normalizedScreenSize>
-    <normalizedScreenWidth>1000</normalizedScreenWidth>
-    <normalizedScreenHeight>1000</normalizedScreenHeight>
+    <normalizedScreenWidth>%d</normalizedScreenWidth>
+    <normalizedScreenHeight>%d</normalizedScreenHeight>
   </normalizedScreenSize>
   <TamperDetectionRegionList size="1">
     <TamperDetectionRegion version="2.0" xmlns="http://www.hikvision.com/ver20/XMLSchema">
@@ -542,7 +624,7 @@ func (c *CameraClient) SetTamperDetection(ip, username, password string, channel
       %s
     </TamperDetectionRegion>
   </TamperDetectionRegionList>
-</TamperDetection>`, channelID, td.Enabled, td.Enabled, td.Sensitivity, coordsXML.String())
+</TamperDetection>`, channelID, td.Enabled, sw, sh, td.Enabled, td.Sensitivity, coordsXML.String())
 
 	// Payload 3: Legacy schema with TamperDetectionRegionList
 	payload3 := fmt.Sprintf(`<?xml version="1.0" encoding="UTF-8"?>

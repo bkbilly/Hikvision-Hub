@@ -100,6 +100,27 @@ func TestISAPIHandlersEndpoints(t *testing.T) {
     <TamperDetectionRegion><id>1</id><enabled>true</enabled><sensitivityLevel>50</sensitivityLevel></TamperDetectionRegion>
   </TamperDetectionRegionList>
 </TamperDetection>`))
+		case "/ISAPI/System/Video/inputs/channels/1/privacyMask":
+			if r.Method == "GET" {
+				w.Header().Set("Content-Type", "application/xml")
+				w.WriteHeader(http.StatusOK)
+				_, _ = w.Write([]byte(`<?xml version="1.0" encoding="UTF-8"?>
+<PrivacyMask version="2.0" xmlns="http://www.hikvision.com/ver20/XMLSchema">
+  <enabled>true</enabled>
+  <normalizedScreenSize><normalizedScreenWidth>704</normalizedScreenWidth><normalizedScreenHeight>480</normalizedScreenHeight></normalizedScreenSize>
+  <PrivacyMaskRegionList size="4">
+    <PrivacyMaskRegion><id>1</id><enabled>true</enabled><RegionCoordinatesList>
+      <RegionCoordinates><positionX>70</positionX><positionY>48</positionY></RegionCoordinates>
+      <RegionCoordinates><positionX>352</positionX><positionY>48</positionY></RegionCoordinates>
+      <RegionCoordinates><positionX>352</positionX><positionY>240</positionY></RegionCoordinates>
+      <RegionCoordinates><positionX>70</positionX><positionY>240</positionY></RegionCoordinates>
+    </RegionCoordinatesList></PrivacyMaskRegion>
+  </PrivacyMaskRegionList>
+</PrivacyMask>`))
+			} else {
+				w.WriteHeader(http.StatusOK)
+				_, _ = w.Write([]byte(`<ResponseStatus><statusCode>1</statusCode></ResponseStatus>`))
+			}
 		case "/ISAPI/Smart/UnattendedBaggage/1":
 			w.Header().Set("Content-Type", "application/xml")
 			w.WriteHeader(http.StatusOK)
@@ -277,5 +298,25 @@ func TestISAPIHandlersEndpoints(t *testing.T) {
 	}
 	if !removal.Enabled || removal.Sensitivity != 75 || removal.TimeThreshold != 18 {
 		t.Errorf("Unexpected object removal settings: %+v", removal)
+	}
+
+	// 9. Test Privacy Mask endpoint
+	w = sendReq("GET", "/api/cameras/1/isapi/privacy-mask", nil)
+	if w.Code != http.StatusOK {
+		t.Fatalf("Privacy mask endpoint failed with code %d: %s", w.Code, w.Body.String())
+	}
+	var mask hikvision.PrivacyMask
+	if err := json.NewDecoder(w.Body).Decode(&mask); err != nil {
+		t.Fatalf("Failed to decode privacy mask: %v", err)
+	}
+	if !mask.Enabled || len(mask.Regions) != 1 {
+		t.Errorf("Unexpected privacy mask: %+v", mask)
+	}
+
+	// Test PUT Privacy Mask
+	putBody, _ := json.Marshal(mask)
+	w = sendReq("PUT", "/api/cameras/1/isapi/privacy-mask", putBody)
+	if w.Code != http.StatusOK {
+		t.Fatalf("PUT privacy mask failed with code %d: %s", w.Code, w.Body.String())
 	}
 }

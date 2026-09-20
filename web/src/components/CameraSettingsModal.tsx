@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
 import type {
   Camera,
   CameraCapabilities,
@@ -65,9 +65,23 @@ export const CameraSettingsModal: React.FC<CameraSettingsModalProps> = ({
 
   // Time & NTP
   const [deviceTime, setDeviceTime] = useState<DeviceTime | null>(null);
+  const [deviceTimeFetchedAt, setDeviceTimeFetchedAt] = useState<number>(() => Date.now());
   const [ntpServer, setNtpServer] = useState<NTPServer | null>(null);
   const [isSyncingTime, setIsSyncingTime] = useState<boolean>(false);
   const [timeMode, setTimeMode] = useState<'manual' | 'NTP'>('manual');
+
+  const refreshCameraTime = useCallback(async () => {
+    if (!camera) return;
+    try {
+      const res = await api.getCameraTime(camera.id);
+      setDeviceTime(res);
+      setDeviceTimeFetchedAt(Date.now());
+      if (res.time_mode === 'NTP') setTimeMode('NTP');
+      else setTimeMode('manual');
+    } catch (err) {
+      console.warn('time refresh error', err);
+    }
+  }, [camera]);
 
   // Image Settings
   const [imageSettings, setImageSettings] = useState<ImageSettings | null>(null);
@@ -86,9 +100,10 @@ export const CameraSettingsModal: React.FC<CameraSettingsModalProps> = ({
   // PTZ
   const [ptzPresets, setPtzPresets] = useState<PTZPreset[]>([]);
 
-  // Events tab refresh ref & key
+  // Events tab & Privacy tab refresh ref & key
   const [refreshKey, setRefreshKey] = useState<number>(Date.now());
   const eventsRefreshRef = useRef<(() => Promise<void>) | null>(null);
+  const privacyRefreshRef = useRef<(() => Promise<void>) | null>(null);
 
   // Raw ISAPI Console
   const [rawPath, setRawPath] = useState<string>('/ISAPI/System/deviceInfo');
@@ -134,6 +149,7 @@ export const CameraSettingsModal: React.FC<CameraSettingsModalProps> = ({
       api.getCameraTime(camera.id)
         .then((res) => {
           setDeviceTime(res);
+          setDeviceTimeFetchedAt(Date.now());
           if (res.time_mode === 'NTP') setTimeMode('NTP');
           else setTimeMode('manual');
         })
@@ -189,6 +205,11 @@ export const CameraSettingsModal: React.FC<CameraSettingsModalProps> = ({
       promises.push(eventsRefreshRef.current().catch((err) => console.warn('events refresh error', err)));
     }
 
+    // 9. If Privacy Mask tab is currently mounted, also trigger and await its refresh!
+    if (privacyRefreshRef.current) {
+      promises.push(privacyRefreshRef.current().catch((err) => console.warn('privacy refresh error', err)));
+    }
+
     try {
       await Promise.allSettled(promises);
     } catch (err: any) {
@@ -213,6 +234,7 @@ export const CameraSettingsModal: React.FC<CameraSettingsModalProps> = ({
       setSaveStatus({ success: true, message: res.message });
       const updatedTime = await api.getCameraTime(camera.id);
       setDeviceTime(updatedTime);
+      setDeviceTimeFetchedAt(Date.now());
     } catch (err: any) {
       setSaveStatus({ success: false, message: err.message || 'Time sync failed' });
     } finally {
@@ -223,12 +245,24 @@ export const CameraSettingsModal: React.FC<CameraSettingsModalProps> = ({
   const handleSaveNTP = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!camera || !ntpServer) return;
+    setSaveStatus(null);
     try {
       const res = await api.setCameraNTP(camera.id, ntpServer);
-      // Also switch the camera's timeMode to NTP
-      await api.setCameraTime(camera.id, { time_mode: 'NTP', local_time: '', time_zone: deviceTime?.time_zone || '' });
-      setTimeMode('NTP');
-      setSaveStatus({ success: true, message: res.message });
+      // Only switch the camera's timeMode to NTP if not already NTP
+      if (timeMode !== 'NTP') {
+        await api.setCameraTime(camera.id, {
+          time_mode: 'NTP',
+          local_time: deviceTime?.local_time || '',
+          time_zone: deviceTime?.time_zone || '',
+        });
+        setTimeMode('NTP');
+      }
+      const updatedNTP = await api.getCameraNTP(camera.id);
+      setNtpServer(updatedNTP);
+      const updatedTime = await api.getCameraTime(camera.id);
+      setDeviceTime(updatedTime);
+      setDeviceTimeFetchedAt(Date.now());
+      setSaveStatus({ success: true, message: res.message || 'NTP configuration updated successfully' });
     } catch (err: any) {
       setSaveStatus({ success: false, message: err.message || 'NTP save failed' });
     }
@@ -243,16 +277,25 @@ export const CameraSettingsModal: React.FC<CameraSettingsModalProps> = ({
         if (ntpServer) {
           await api.setCameraNTP(camera.id, ntpServer);
         }
-        await api.setCameraTime(camera.id, { time_mode: 'NTP', local_time: '', time_zone: deviceTime.time_zone || '' });
+        await api.setCameraTime(camera.id, {
+          time_mode: 'NTP',
+          local_time: deviceTime.local_time || '',
+          time_zone: deviceTime.time_zone || '',
+        });
       } else {
         // Switch to manual — sync current browser time
         const now = new Date();
         const localIso = new Date(now.getTime() - now.getTimezoneOffset() * 60000).toISOString().slice(0, 19);
-        await api.setCameraTime(camera.id, { time_mode: 'manual', local_time: localIso, time_zone: deviceTime.time_zone || '' });
+        await api.setCameraTime(camera.id, {
+          time_mode: 'manual',
+          local_time: localIso,
+          time_zone: deviceTime.time_zone || '',
+        });
       }
       setTimeMode(newMode);
       const updatedTime = await api.getCameraTime(camera.id);
       setDeviceTime(updatedTime);
+      setDeviceTimeFetchedAt(Date.now());
       setSaveStatus({ success: true, message: `Time mode switched to ${newMode === 'NTP' ? 'NTP' : 'Manual'} successfully` });
     } catch (err: any) {
       setSaveStatus({ success: false, message: err.message || 'Failed to switch time mode' });
@@ -382,7 +425,7 @@ export const CameraSettingsModal: React.FC<CameraSettingsModalProps> = ({
   return (
     <div className="fixed inset-0 z-50 bg-black/85 backdrop-blur-md overflow-y-auto">
       <div className="flex min-h-full items-start justify-center p-2 sm:p-4">
-        <div className="relative w-full max-w-5xl glass-panel bg-slate-950 rounded-2xl border border-slate-800 shadow-2xl flex flex-col my-auto">
+        <div className="relative w-full max-w-5xl glass-panel bg-slate-950 rounded-2xl border border-slate-800 shadow-2xl flex flex-col my-auto max-h-[calc(100dvh-1rem)] sm:max-h-[calc(100dvh-2rem)] overflow-hidden">
           {/* Header */}
           <div className="flex items-center justify-between px-4 sm:px-6 py-3.5 border-b border-slate-800 bg-slate-900/80 rounded-t-2xl shrink-0">
             <div className="flex items-center gap-3">
@@ -438,9 +481,9 @@ export const CameraSettingsModal: React.FC<CameraSettingsModalProps> = ({
           )}
 
           {/* Main Content Layout: Tabs + Body */}
-          <div className="flex flex-col md:flex-row" style={{ minHeight: '480px' }}>
+          <div className="flex-1 min-h-0 flex flex-col md:flex-row overflow-hidden">
             {/* Vertical / Horizontal Navigation */}
-            <div className="w-full md:w-56 border-b md:border-b-0 md:border-r border-slate-800 bg-slate-900/40 p-2 md:p-3 flex md:flex-col gap-1 overflow-x-auto md:overflow-x-hidden shrink-0">
+            <div className="w-full md:w-56 border-b md:border-b-0 md:border-r border-slate-800 bg-slate-900/40 p-2 md:p-3 flex md:flex-col gap-1 overflow-x-auto md:overflow-y-auto shrink-0">
               <button
                 onClick={() => { setActiveTab('device'); setSaveStatus(null); }}
                 className={`flex items-center gap-2.5 px-3 py-2.5 rounded-xl text-xs sm:text-sm font-medium transition-all whitespace-nowrap text-left cursor-pointer ${
@@ -454,7 +497,7 @@ export const CameraSettingsModal: React.FC<CameraSettingsModalProps> = ({
               </button>
 
               <button
-                onClick={() => { setActiveTab('time'); setSaveStatus(null); }}
+                onClick={() => { setActiveTab('time'); setSaveStatus(null); refreshCameraTime(); }}
                 className={`flex items-center gap-2.5 px-3 py-2.5 rounded-xl text-xs sm:text-sm font-medium transition-all whitespace-nowrap text-left cursor-pointer ${
                   activeTab === 'time'
                     ? 'bg-blue-600/20 text-blue-400 border border-blue-500/30 font-semibold'
@@ -478,18 +521,6 @@ export const CameraSettingsModal: React.FC<CameraSettingsModalProps> = ({
               </button>
 
               <button
-                onClick={() => { setActiveTab('video'); setSaveStatus(null); }}
-                className={`flex items-center gap-2.5 px-3 py-2.5 rounded-xl text-xs sm:text-sm font-medium transition-all whitespace-nowrap text-left cursor-pointer ${
-                  activeTab === 'video'
-                    ? 'bg-blue-600/20 text-blue-400 border border-blue-500/30 font-semibold'
-                    : 'text-slate-400 hover:text-slate-200 hover:bg-slate-800/60 border border-transparent'
-                }`}
-              >
-                <Video className="w-4 h-4 shrink-0" />
-                <span>Streams</span>
-              </button>
-
-              <button
                 onClick={() => { setActiveTab('events'); setSaveStatus(null); }}
                 className={`flex items-center gap-2.5 px-3 py-2.5 rounded-xl text-xs sm:text-sm font-medium transition-all whitespace-nowrap text-left cursor-pointer ${
                   activeTab === 'events'
@@ -499,6 +530,18 @@ export const CameraSettingsModal: React.FC<CameraSettingsModalProps> = ({
               >
                 <Shield className="w-4 h-4 shrink-0" />
                 <span>Events</span>
+              </button>
+
+              <button
+                onClick={() => { setActiveTab('video'); setSaveStatus(null); }}
+                className={`flex items-center gap-2.5 px-3 py-2.5 rounded-xl text-xs sm:text-sm font-medium transition-all whitespace-nowrap text-left cursor-pointer ${
+                  activeTab === 'video'
+                    ? 'bg-blue-600/20 text-blue-400 border border-blue-500/30 font-semibold'
+                    : 'text-slate-400 hover:text-slate-200 hover:bg-slate-800/60 border border-transparent'
+                }`}
+              >
+                <Video className="w-4 h-4 shrink-0" />
+                <span>Streams</span>
               </button>
 
               <button
@@ -541,7 +584,7 @@ export const CameraSettingsModal: React.FC<CameraSettingsModalProps> = ({
             </div>
 
             {/* Active Tab Body */}
-            <div className="flex-1 p-4 sm:p-6 overflow-y-auto" style={{ maxHeight: 'calc(100dvh - 12rem)' }}>
+            <div className="flex-1 min-h-0 p-4 sm:p-6 overflow-y-auto">
               {activeTab === 'device' && (
                 <DeviceTab
                   camera={camera}
@@ -554,6 +597,7 @@ export const CameraSettingsModal: React.FC<CameraSettingsModalProps> = ({
               {activeTab === 'time' && (
                 <TimeTab
                   deviceTime={deviceTime}
+                  deviceTimeFetchedAt={deviceTimeFetchedAt}
                   ntpServer={ntpServer}
                   setNtpServer={setNtpServer}
                   timeMode={timeMode}
@@ -561,6 +605,7 @@ export const CameraSettingsModal: React.FC<CameraSettingsModalProps> = ({
                   isSyncingTime={isSyncingTime}
                   onSyncTime={handleSyncTime}
                   onSaveNTP={handleSaveNTP}
+                  onRefreshTime={refreshCameraTime}
                 />
               )}
 
@@ -568,23 +613,17 @@ export const CameraSettingsModal: React.FC<CameraSettingsModalProps> = ({
                 <ImageTab
                   camera={camera}
                   snapshotKey={snapshotKey}
+                  refreshKey={refreshKey}
                   imageSettings={imageSettings}
                   setImageSettings={setImageSettings}
                   onRefreshPreview={refreshPreview}
                   onSaveImage={handleSaveImage}
                   isSaving={isSavingImage}
-                />
-              )}
-
-              {activeTab === 'video' && (
-                <VideoTab
-                  streamChannel={streamChannel}
-                  setStreamChannel={setStreamChannel}
-                  mainStream={mainStream}
-                  setMainStream={setMainStream}
-                  subStream={subStream}
-                  setSubStream={setSubStream}
-                  onSaveStream={handleSaveStream}
+                  capabilities={capabilities}
+                  setSaveStatus={setSaveStatus}
+                  onRegisterPrivacyRefresh={(refreshFn) => {
+                    privacyRefreshRef.current = refreshFn;
+                  }}
                 />
               )}
 
@@ -599,6 +638,18 @@ export const CameraSettingsModal: React.FC<CameraSettingsModalProps> = ({
                   }}
                   snapshotKey={snapshotKey}
                   onRefreshPreview={refreshPreview}
+                />
+              )}
+
+              {activeTab === 'video' && (
+                <VideoTab
+                  streamChannel={streamChannel}
+                  setStreamChannel={setStreamChannel}
+                  mainStream={mainStream}
+                  setMainStream={setMainStream}
+                  subStream={subStream}
+                  setSubStream={setSubStream}
+                  onSaveStream={handleSaveStream}
                 />
               )}
 

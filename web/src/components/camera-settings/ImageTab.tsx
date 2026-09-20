@@ -1,16 +1,21 @@
-import React from 'react';
-import { RefreshCw, Sun, Moon, Sparkles, Sliders, Eye, Lightbulb, Loader2 } from 'lucide-react';
-import type { Camera, ImageSettings } from '../../types';
+import React, { useState } from 'react';
+import { RefreshCw, Sun, Moon, Sparkles, Sliders, Eye, EyeOff, Lightbulb, Loader2 } from 'lucide-react';
+import type { Camera, ImageSettings, CameraCapabilities } from '../../types';
 import { api } from '../../api';
+import { PrivacyMaskTab } from './PrivacyMaskTab';
 
 interface ImageTabProps {
   camera: Camera;
   snapshotKey: number;
+  refreshKey?: number;
   imageSettings: ImageSettings | null;
   setImageSettings: React.Dispatch<React.SetStateAction<ImageSettings | null>>;
   onRefreshPreview: () => void;
   onSaveImage: (e: React.FormEvent) => void;
   isSaving?: boolean;
+  capabilities?: CameraCapabilities | null;
+  setSaveStatus: React.Dispatch<React.SetStateAction<{ success: boolean; message: string } | null>>;
+  onRegisterPrivacyRefresh?: (refreshFn: () => Promise<void>) => void;
 }
 
 const IR_LABELS: Record<string, string> = {
@@ -59,14 +64,74 @@ const FLIP_LABELS: Record<string, string> = {
 export const ImageTab: React.FC<ImageTabProps> = ({
   camera,
   snapshotKey,
+  refreshKey,
   imageSettings,
   setImageSettings,
   onRefreshPreview,
   onSaveImage,
   isSaving = false,
+  capabilities,
+  setSaveStatus,
+  onRegisterPrivacyRefresh,
 }) => {
+  const [activeSubTab, setActiveSubTab] = useState<'display' | 'privacy'>('display');
+  const hasPrivacyMask = capabilities === null || capabilities?.has_privacy_mask !== false;
+
+  const renderSubTabs = () => {
+    if (!hasPrivacyMask) return null;
+    return (
+      <div className="flex items-center gap-1.5 p-1 bg-slate-900 border border-slate-800 rounded-xl">
+        <button
+          type="button"
+          onClick={() => setActiveSubTab('display')}
+          className={`py-1.5 px-3.5 text-xs font-medium rounded-lg transition-colors flex items-center gap-2 cursor-pointer ${
+            activeSubTab === 'display'
+              ? 'bg-blue-600 text-white shadow-sm font-semibold'
+              : 'text-slate-400 hover:text-white'
+          }`}
+        >
+          <Sun className="w-3.5 h-3.5" />
+          <span>Display Settings</span>
+        </button>
+        <button
+          type="button"
+          onClick={() => setActiveSubTab('privacy')}
+          className={`py-1.5 px-3.5 text-xs font-medium rounded-lg transition-colors flex items-center gap-2 cursor-pointer ${
+            activeSubTab === 'privacy'
+              ? 'bg-blue-600 text-white shadow-sm font-semibold'
+              : 'text-slate-400 hover:text-white'
+          }`}
+        >
+          <EyeOff className="w-3.5 h-3.5" />
+          <span>Privacy Mask</span>
+        </button>
+      </div>
+    );
+  };
+
+  if (activeSubTab === 'privacy') {
+    return (
+      <div className="space-y-6">
+        {renderSubTabs()}
+        <PrivacyMaskTab
+          camera={camera}
+          snapshotKey={snapshotKey}
+          refreshKey={refreshKey}
+          onRefreshPreview={onRefreshPreview}
+          setSaveStatus={setSaveStatus}
+          onRegisterRefresh={onRegisterPrivacyRefresh}
+        />
+      </div>
+    );
+  }
+
   if (!imageSettings) {
-    return <div className="text-center py-12 text-slate-500 text-sm">Loading image settings...</div>;
+    return (
+      <div className="space-y-6">
+        {renderSubTabs()}
+        <div className="text-center py-12 text-slate-500 text-sm">Loading image settings...</div>
+      </div>
+    );
   }
 
   // IR Cut Filter options
@@ -110,6 +175,7 @@ export const ImageTab: React.FC<ImageTabProps> = ({
 
   return (
     <div className="space-y-6">
+      {renderSubTabs()}
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2">
         <div>
           <h3 className="text-sm font-semibold text-white mb-0.5">Image & Display Settings</h3>

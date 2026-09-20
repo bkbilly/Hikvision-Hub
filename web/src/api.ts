@@ -2,6 +2,7 @@ import type {
   Bookmark,
   Camera,
   CameraCapabilities,
+  CameraDiscoveryResponse,
   DeviceInfo,
   DeviceTime,
   FieldDetection,
@@ -11,11 +12,13 @@ import type {
   MotionDetection,
   NTPServer,
   PTZPreset,
+  ProbeResponse,
   RecordingDateInfo,
   RecordingSegment,
   StreamSettings,
   SystemStatus,
   TamperDetection,
+  PrivacyMask,
   UnattendedBaggage,
   ObjectRemoval,
   RegionEntrance,
@@ -126,6 +129,15 @@ export const api = {
     request<{ valid: boolean; message: string; dirs: any[] }>('/cameras/discover-path', {
       method: 'POST',
       body: JSON.stringify({ path }),
+    }),
+
+  discoverCameras: () =>
+    request<CameraDiscoveryResponse>('/cameras/discover'),
+
+  probeCamera: (data: { ip: string; username?: string; password?: string }) =>
+    request<ProbeResponse>('/cameras/probe', {
+      method: 'POST',
+      body: JSON.stringify(data),
     }),
 
   getSnapshotUrl: (cameraId: number, timestamp?: number) => {
@@ -320,6 +332,15 @@ export const api = {
 
   setCameraTamper: (id: number, data: TamperDetection) =>
     request<{ success: boolean; message: string }>(`/cameras/${id}/isapi/tamper`, {
+      method: 'PUT',
+      body: JSON.stringify(data),
+    }),
+
+  getCameraPrivacyMask: (id: number) =>
+    request<PrivacyMask>(`/cameras/${id}/isapi/privacy-mask`),
+
+  setCameraPrivacyMask: (id: number, data: PrivacyMask) =>
+    request<{ success: boolean; message: string }>(`/cameras/${id}/isapi/privacy-mask`, {
       method: 'PUT',
       body: JSON.stringify(data),
     }),

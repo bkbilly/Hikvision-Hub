@@ -216,6 +216,10 @@ export const EventsTab: React.FC<EventsTabProps> = ({
           handleCancelDrawing();
         }
         resetGridDrag();
+      } else if (e.key === 'Enter') {
+        if (isDrawingNormalMotion && normalMotionDrawPoints.length >= 3) {
+          handleFinishNormalMotionPolygon();
+        }
       }
     };
     const onWindowPointerUp = () => {
@@ -228,7 +232,7 @@ export const EventsTab: React.FC<EventsTabProps> = ({
       window.removeEventListener('keydown', handleKeyDown);
       window.removeEventListener('pointerup', onWindowPointerUp);
     };
-  }, [drawStep, drawIntrusionStep, isDrawingNormalMotion, isPaintingGrid, gridDragStart, gridInitialState, gridBrushMode]);
+  }, [drawStep, drawIntrusionStep, isDrawingNormalMotion, normalMotionDrawPoints, isPaintingGrid, gridDragStart, gridInitialState, gridBrushMode]);
 
   // Capabilities helpers
   const supportsTargetDetection = Boolean(
@@ -616,10 +620,20 @@ export const EventsTab: React.FC<EventsTabProps> = ({
       setDraggingPoint(null);
       return;
     }
+    if (evt === 'tamper') {
+      setActiveSmartEvent('tamper');
+      if (tamper) {
+        setTamper({ ...tamper, enabled: true });
+      }
+      setDrawExpertRectCorner1(null);
+      setDrawStep('first');
+      setDrawIntrusionStep(null);
+      setDrawHoverPt(null);
+      setDraggingPoint(null);
+      return;
+    }
     setActiveSmartEvent(evt);
-    if (evt === 'tamper' && tamper) {
-      setTamper({ ...tamper, enabled: true });
-    } else if (evt === 'intrusion' && intrusion) {
+    if (evt === 'intrusion' && intrusion) {
       setIntrusion({ ...intrusion, enabled: true });
     } else if (evt === 'unattended' && unattended) {
       setUnattended({ ...unattended, enabled: true });
@@ -731,16 +745,45 @@ export const EventsTab: React.FC<EventsTabProps> = ({
       return;
     }
 
-    // Normal Mode Motion: drawing a polygon of 3+ points
+    // Tamper Detection: 90-degree rectangle 2-click drawing
+    if (activeSmartEvent === 'tamper' && drawStep) {
+      if (drawStep === 'first') {
+        setDrawExpertRectCorner1(pos);
+        setDrawStep('second');
+        setDrawHoverPt(pos);
+      } else if (drawStep === 'second' && drawExpertRectCorner1) {
+        const p1 = drawExpertRectCorner1;
+        const p2 = pos;
+        const minX = Math.min(p1.x, p2.x);
+        const maxX = Math.max(p1.x, p2.x);
+        const minY = Math.min(p1.y, p2.y);
+        const maxY = Math.max(p1.y, p2.y);
+        const rectCorners = [
+          { x: minX, y: minY },
+          { x: maxX, y: minY },
+          { x: maxX, y: maxY },
+          { x: minX, y: maxY },
+        ];
+        if (tamper) {
+          setTamper({ ...tamper, enabled: true, coordinates: rectCorners });
+        }
+        setDrawStep(null);
+        setDrawExpertRectCorner1(null);
+        setDrawHoverPt(null);
+      }
+      return;
+    }
+
+    // Normal Mode Motion: drawing a polygon of 3-10 points
     if (activeSmartEvent === 'motion' && (motion?.mode || 'normal') === 'normal' && isDrawingNormalMotion) {
+      if (normalMotionDrawPoints.length >= 10) return;
       setNormalMotionDrawPoints([...normalMotionDrawPoints, pos]);
       return;
     }
 
-    // 4-Point Regions (Intrusion, Tamper, Unattended, Removal, Entrance, Exiting)
+    // 4-Point Regions (Intrusion, Unattended, Removal, Entrance, Exiting)
     if (
       (activeSmartEvent === 'intrusion' ||
-        activeSmartEvent === 'tamper' ||
         activeSmartEvent === 'unattended' ||
         activeSmartEvent === 'removal' ||
         activeSmartEvent === 'entrance' ||
@@ -750,9 +793,7 @@ export const EventsTab: React.FC<EventsTabProps> = ({
       const curCoords = [...getActiveRegionPoints()];
       curCoords[drawIntrusionStep - 1] = pos;
 
-      if (activeSmartEvent === 'tamper' && tamper) {
-        setTamper({ ...tamper, enabled: true, coordinates: curCoords });
-      } else if (activeSmartEvent === 'intrusion' && intrusion) {
+      if (activeSmartEvent === 'intrusion' && intrusion) {
         setIntrusion({ ...intrusion, enabled: true, coordinates: curCoords });
       } else if (activeSmartEvent === 'entrance' && regionEntrance) {
         setRegionEntrance({ ...regionEntrance, enabled: true, coordinates: curCoords });
@@ -845,27 +886,74 @@ export const EventsTab: React.FC<EventsTabProps> = ({
       const newCoords = [...oldCoords];
       const idx = parseInt(draggingPoint, 10) - 1;
       if (idx === 0) {
-        newCoords[0] = { x: pos.x, y: pos.y };
-        newCoords[1] = { x: newCoords[1].x, y: pos.y };
-        newCoords[3] = { x: pos.x, y: newCoords[3].y };
+        const clX = Math.max(0, Math.min(pos.x, oldCoords[1].x - 10));
+        const clY = Math.max(0, Math.min(pos.y, oldCoords[3].y - 10));
+        newCoords[0] = { x: clX, y: clY };
+        newCoords[1] = { x: newCoords[1].x, y: clY };
+        newCoords[3] = { x: clX, y: newCoords[3].y };
       } else if (idx === 1) {
-        newCoords[1] = { x: pos.x, y: pos.y };
-        newCoords[0] = { x: newCoords[0].x, y: pos.y };
-        newCoords[2] = { x: pos.x, y: newCoords[2].y };
+        const clX = Math.min(1000, Math.max(pos.x, oldCoords[0].x + 10));
+        const clY = Math.max(0, Math.min(pos.y, oldCoords[2].y - 10));
+        newCoords[1] = { x: clX, y: clY };
+        newCoords[0] = { x: newCoords[0].x, y: clY };
+        newCoords[2] = { x: clX, y: newCoords[2].y };
       } else if (idx === 2) {
-        newCoords[2] = { x: pos.x, y: pos.y };
-        newCoords[1] = { x: newCoords[1].x, y: pos.y };
-        newCoords[3] = { x: pos.x, y: newCoords[3].y };
+        const clX = Math.min(1000, Math.max(pos.x, oldCoords[3].x + 10));
+        const clY = Math.min(1000, Math.max(pos.y, oldCoords[1].y + 10));
+        newCoords[2] = { x: clX, y: clY };
+        newCoords[1] = { x: clX, y: newCoords[1].y };
+        newCoords[3] = { x: newCoords[3].x, y: clY };
       } else if (idx === 3) {
-        newCoords[3] = { x: pos.x, y: pos.y };
-        newCoords[0] = { x: newCoords[0].x, y: pos.y };
-        newCoords[2] = { x: pos.x, y: newCoords[2].y };
+        const clX = Math.max(0, Math.min(pos.x, oldCoords[2].x - 10));
+        const clY = Math.min(1000, Math.max(pos.y, oldCoords[0].y + 10));
+        newCoords[3] = { x: clX, y: clY };
+        newCoords[0] = { x: clX, y: newCoords[0].y };
+        newCoords[2] = { x: newCoords[2].x, y: clY };
       }
       currentRegions[activeExpertAreaIndex] = {
         ...currentRegions[activeExpertAreaIndex],
         coordinates: newCoords,
       };
       setMotion({ ...motion, regions: currentRegions });
+    } else if (activeSmartEvent === 'tamper' && tamper) {
+      // Video Tampering: Dragging any corner preserves 90-degree rectangle geometry!
+      const oldCoords =
+        tamper?.coordinates && tamper.coordinates.length >= 4
+          ? [...tamper.coordinates]
+          : [
+              { x: 100, y: 100 },
+              { x: 900, y: 100 },
+              { x: 900, y: 900 },
+              { x: 100, y: 900 },
+            ];
+      const newCoords = [...oldCoords];
+      const idx = parseInt(draggingPoint, 10) - 1;
+      if (idx === 0) {
+        const clX = Math.max(0, Math.min(pos.x, oldCoords[1].x - 10));
+        const clY = Math.max(0, Math.min(pos.y, oldCoords[3].y - 10));
+        newCoords[0] = { x: clX, y: clY };
+        newCoords[1] = { x: newCoords[1].x, y: clY };
+        newCoords[3] = { x: clX, y: newCoords[3].y };
+      } else if (idx === 1) {
+        const clX = Math.min(1000, Math.max(pos.x, oldCoords[0].x + 10));
+        const clY = Math.max(0, Math.min(pos.y, oldCoords[2].y - 10));
+        newCoords[1] = { x: clX, y: clY };
+        newCoords[0] = { x: newCoords[0].x, y: clY };
+        newCoords[2] = { x: clX, y: newCoords[2].y };
+      } else if (idx === 2) {
+        const clX = Math.min(1000, Math.max(pos.x, oldCoords[3].x + 10));
+        const clY = Math.min(1000, Math.max(pos.y, oldCoords[1].y + 10));
+        newCoords[2] = { x: clX, y: clY };
+        newCoords[1] = { x: clX, y: newCoords[1].y };
+        newCoords[3] = { x: newCoords[3].x, y: clY };
+      } else if (idx === 3) {
+        const clX = Math.max(0, Math.min(pos.x, oldCoords[2].x - 10));
+        const clY = Math.min(1000, Math.max(pos.y, oldCoords[0].y + 10));
+        newCoords[3] = { x: clX, y: clY };
+        newCoords[0] = { x: clX, y: newCoords[0].y };
+        newCoords[2] = { x: newCoords[2].x, y: clY };
+      }
+      setTamper({ ...tamper, coordinates: newCoords });
     } else if (
       activeSmartEvent === 'motion' &&
       (motion?.mode || 'normal') === 'normal' &&
@@ -880,7 +968,6 @@ export const EventsTab: React.FC<EventsTabProps> = ({
       }
     } else if (
       activeSmartEvent === 'intrusion' ||
-      activeSmartEvent === 'tamper' ||
       activeSmartEvent === 'unattended' ||
       activeSmartEvent === 'removal' ||
       activeSmartEvent === 'entrance' ||
@@ -890,9 +977,7 @@ export const EventsTab: React.FC<EventsTabProps> = ({
       const idx = parseInt(draggingPoint, 10) - 1;
       if (idx >= 0 && idx < 4) {
         coords[idx] = pos;
-        if (activeSmartEvent === 'tamper' && tamper) {
-          setTamper({ ...tamper, coordinates: coords });
-        } else if (activeSmartEvent === 'intrusion' && intrusion) {
+        if (activeSmartEvent === 'intrusion' && intrusion) {
           setIntrusion({ ...intrusion, coordinates: coords });
         } else if (activeSmartEvent === 'entrance' && regionEntrance) {
           setRegionEntrance({ ...regionEntrance, coordinates: coords });
@@ -1025,6 +1110,10 @@ export const EventsTab: React.FC<EventsTabProps> = ({
     try {
       const res = await api.setCameraMotion(camera.id, motion);
       setSaveStatus({ success: true, message: res.message });
+      const updated = await api.getCameraMotion(camera.id);
+      if (updated) {
+        setMotion(updated);
+      }
     } catch (err: any) {
       setSaveStatus({ success: false, message: err.message || 'Failed to save motion detection' });
     }
@@ -1058,6 +1147,10 @@ export const EventsTab: React.FC<EventsTabProps> = ({
     try {
       const res = await api.setCameraTamper(camera.id, tamper);
       setSaveStatus({ success: true, message: res.message });
+      const updated = await api.getCameraTamper(camera.id);
+      if (updated) {
+        setTamper(updated);
+      }
     } catch (err: any) {
       setSaveStatus({ success: false, message: err.message || 'Failed to save tamper detection' });
     }
@@ -1215,10 +1308,21 @@ export const EventsTab: React.FC<EventsTabProps> = ({
               <Crosshair className="w-4 h-4 text-amber-400" />
               <span>
                 {isDrawingNormalMotion && `Click to place polygon vertices (${normalMotionDrawPoints.length} placed, at least 3 required)`}
-                {drawStep === 'first' && (activeSmartEvent === 'motion' ? `Area ${activeExpertAreaIndex + 1}: Click to place Corner 1 of 90° Rectangle` : 'Step 1 of 2: Click on snapshot to place Point 1 (Start)')}
-                {drawStep === 'second' && (activeSmartEvent === 'motion' ? `Area ${activeExpertAreaIndex + 1}: Click opposite corner to complete 90° Rectangle` : 'Step 2 of 2: Click to place Point 2 (End)')}
+                {drawStep === 'first' && (
+                  activeSmartEvent === 'motion'
+                    ? `Area ${activeExpertAreaIndex + 1}: Click to place Corner 1 of 90° Rectangle`
+                    : activeSmartEvent === 'tamper'
+                    ? 'Step 1 of 2: Click to place Corner 1 of 90° Tamper Rectangle'
+                    : 'Step 1 of 2: Click on snapshot to place Point 1 (Start)'
+                )}
+                {drawStep === 'second' && (
+                  activeSmartEvent === 'motion'
+                    ? `Area ${activeExpertAreaIndex + 1}: Click opposite corner to complete 90° Rectangle`
+                    : activeSmartEvent === 'tamper'
+                    ? 'Step 2 of 2: Click opposite corner to complete 90° Tamper Rectangle'
+                    : 'Step 2 of 2: Click to place Point 2 (End)'
+                )}
                 {drawIntrusionStep && (
-                  activeSmartEvent === 'tamper' ? `Step ${drawIntrusionStep} of 4: Click to place Tamper Corner ${drawIntrusionStep}` :
                   activeSmartEvent === 'intrusion' ? `Step ${drawIntrusionStep} of 4: Click to place Intrusion Corner ${drawIntrusionStep}` :
                   activeSmartEvent === 'entrance' ? `Step ${drawIntrusionStep} of 4: Click to place Region Entrance Corner ${drawIntrusionStep}` :
                   activeSmartEvent === 'exiting' ? `Step ${drawIntrusionStep} of 4: Click to place Region Exiting Corner ${drawIntrusionStep}` :

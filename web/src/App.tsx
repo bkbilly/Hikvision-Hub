@@ -336,7 +336,7 @@ export function App() {
         username={username}
       />
 
-      <main className="flex-1 max-w-7xl w-full mx-auto p-3 sm:p-6 space-y-4">
+      <main className="flex-1 w-full mx-auto p-3 sm:p-6 space-y-4">
         {activeTab === 'live' ? (
           <LiveGrid
             cameras={enabledCameras}
