@@ -26,14 +26,16 @@ var upgrader = websocket.Upgrader{
 }
 
 type WSHandler struct {
-	db        *db.DB
-	camClient *hikvision.CameraClient
+	db           *db.DB
+	camClient    *hikvision.CameraClient
+	alertManager *hikvision.AlertStreamManager
 }
 
-func NewWSHandler(db *db.DB, camClient *hikvision.CameraClient) *WSHandler {
+func NewWSHandler(db *db.DB, camClient *hikvision.CameraClient, alertManager *hikvision.AlertStreamManager) *WSHandler {
 	return &WSHandler{
-		db:        db,
-		camClient: camClient,
+		db:           db,
+		camClient:    camClient,
+		alertManager: alertManager,
 	}
 }
 
@@ -230,3 +232,75 @@ func (h *WSHandler) StreamLiveWS(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 }
+
+// StreamEventsWS handles live WebSocket connections for real-time camera alert events.
+func (h *WSHandler) StreamEventsWS(w http.ResponseWriter, r *http.Request) {
+	if h.alertManager == nil {
+		http.Error(w, "Alert stream manager not available", http.StatusServiceUnavailable)
+		return
+	}
+
+	ws, err := upgrader.Upgrade(w, r, nil)
+	if err != nil {
+		log.Printf("[WS Events] Upgrade error: %v", err)
+		return
+	}
+	defer ws.Close()
+
+	ctx, cancel := context.WithCancel(r.Context())
+	defer cancel()
+
+	// Read pump to detect client disconnect and keep connection alive
+	go func() {
+		defer cancel()
+		for {
+			if _, _, err := ws.ReadMessage(); err != nil {
+				return
+			}
+		}
+	}()
+
+	// Send initial snapshot of active and recent events
+	initPayload := map[string]interface{}{
+		"type":   "init",
+		"active": h.alertManager.GetActiveEvents(),
+		"recent": h.alertManager.GetRecentEvents(),
+	}
+	ws.SetWriteDeadline(time.Now().Add(5 * time.Second))
+	if err := ws.WriteJSON(initPayload); err != nil {
+		return
+	}
+
+	// Subscribe to live broadcast
+	ch := h.alertManager.Subscribe()
+	defer h.alertManager.Unsubscribe(ch)
+
+	// Keepalive ping ticker
+	ticker := time.NewTicker(20 * time.Second)
+	defer ticker.Stop()
+
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-ticker.C:
+			ws.SetWriteDeadline(time.Now().Add(5 * time.Second))
+			if err := ws.WriteMessage(websocket.PingMessage, nil); err != nil {
+				return
+			}
+		case evt, ok := <-ch:
+			if !ok {
+				return
+			}
+			ws.SetWriteDeadline(time.Now().Add(5 * time.Second))
+			payload := map[string]interface{}{
+				"type":  "event",
+				"event": evt,
+			}
+			if err := ws.WriteJSON(payload); err != nil {
+				return
+			}
+		}
+	}
+}
+

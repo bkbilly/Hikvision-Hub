@@ -100,6 +100,14 @@ export const EventsTab: React.FC<EventsTabProps> = ({
   // Expert mode active area index
   const [activeExpertAreaIndex, setActiveExpertAreaIndex] = useState<number>(0);
 
+  // Target Size Filter (Min / Max Size) States
+  const [drawSizeMode, setDrawSizeMode] = useState<'min' | 'max' | null>(null);
+  const [drawSizeCorner1, setDrawSizeCorner1] = useState<Point | null>(null);
+  const [dragSizeAnchorPos, setDragSizeAnchorPos] = useState<Point | null>(null);
+  const [isDraggingSizeBody, setIsDraggingSizeBody] = useState<'min' | 'max' | null>(null);
+  const [dragSizeBodyStart, setDragSizeBodyStart] = useState<Point | null>(null);
+  const [dragSizeBodyOrig, setDragSizeBodyOrig] = useState<Point[] | null>(null);
+
   const loadEventsData = useCallback(async () => {
     setDrawStep(null);
     setDrawIntrusionStep(null);
@@ -108,6 +116,12 @@ export const EventsTab: React.FC<EventsTabProps> = ({
     setNormalMotionDrawPoints([]);
     setDrawHoverPt(null);
     setDraggingPoint(null);
+    setDrawSizeMode(null);
+    setDrawSizeCorner1(null);
+    setDragSizeAnchorPos(null);
+    setIsDraggingSizeBody(null);
+    setDragSizeBodyStart(null);
+    setDragSizeBodyOrig(null);
 
     await Promise.allSettled([
       api.getCameraMotion(camera.id)
@@ -212,7 +226,7 @@ export const EventsTab: React.FC<EventsTabProps> = ({
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
       if (e.key === 'Escape') {
-        if (drawStep || drawIntrusionStep || isDrawingNormalMotion) {
+        if (drawStep || drawIntrusionStep || isDrawingNormalMotion || drawSizeMode) {
           handleCancelDrawing();
         }
         resetGridDrag();
@@ -232,7 +246,7 @@ export const EventsTab: React.FC<EventsTabProps> = ({
       window.removeEventListener('keydown', handleKeyDown);
       window.removeEventListener('pointerup', onWindowPointerUp);
     };
-  }, [drawStep, drawIntrusionStep, isDrawingNormalMotion, normalMotionDrawPoints, isPaintingGrid, gridDragStart, gridInitialState, gridBrushMode]);
+  }, [drawStep, drawIntrusionStep, isDrawingNormalMotion, normalMotionDrawPoints, isPaintingGrid, gridDragStart, gridInitialState, gridBrushMode, drawSizeMode]);
 
   // Capabilities helpers
   const supportsTargetDetection = Boolean(
@@ -457,7 +471,11 @@ export const EventsTab: React.FC<EventsTabProps> = ({
 
   const handlePointerUp = () => {
     resetGridDrag();
-    if (!drawStep && !drawIntrusionStep) {
+    setDragSizeAnchorPos(null);
+    setIsDraggingSizeBody(null);
+    setDragSizeBodyStart(null);
+    setDragSizeBodyOrig(null);
+    if (!drawStep && !drawIntrusionStep && !drawSizeMode) {
       setDraggingPoint(null);
     }
   };
@@ -673,6 +691,151 @@ export const EventsTab: React.FC<EventsTabProps> = ({
     setDrawHoverPt(null);
   };
 
+  // Target Size Filter helpers
+  const getCurrentMinSize = (): Point[] | undefined => {
+    switch (activeSmartEvent) {
+      case 'line': return lineDetection?.min_size;
+      case 'intrusion': return intrusion?.min_size;
+      case 'entrance': return regionEntrance?.min_size;
+      case 'exiting': return regionExiting?.min_size;
+      case 'unattended': return unattended?.min_size;
+      case 'removal': return objectRemoval?.min_size;
+      default: return undefined;
+    }
+  };
+
+  const getCurrentMaxSize = (): Point[] | undefined => {
+    switch (activeSmartEvent) {
+      case 'line': return lineDetection?.max_size;
+      case 'intrusion': return intrusion?.max_size;
+      case 'entrance': return regionEntrance?.max_size;
+      case 'exiting': return regionExiting?.max_size;
+      case 'unattended': return unattended?.max_size;
+      case 'removal': return objectRemoval?.max_size;
+      default: return undefined;
+    }
+  };
+
+  const updateCurrentMinSize = (pts: Point[] | undefined) => {
+    switch (activeSmartEvent) {
+      case 'line':
+        if (lineDetection) setLineDetection({ ...lineDetection, min_size: pts });
+        break;
+      case 'intrusion':
+        if (intrusion) setIntrusion({ ...intrusion, min_size: pts });
+        break;
+      case 'entrance':
+        if (regionEntrance) setRegionEntrance({ ...regionEntrance, min_size: pts });
+        break;
+      case 'exiting':
+        if (regionExiting) setRegionExiting({ ...regionExiting, min_size: pts });
+        break;
+      case 'unattended':
+        if (unattended) setUnattended({ ...unattended, min_size: pts });
+        break;
+      case 'removal':
+        if (objectRemoval) setObjectRemoval({ ...objectRemoval, min_size: pts });
+        break;
+    }
+  };
+
+  const updateCurrentMaxSize = (pts: Point[] | undefined) => {
+    switch (activeSmartEvent) {
+      case 'line':
+        if (lineDetection) setLineDetection({ ...lineDetection, max_size: pts });
+        break;
+      case 'intrusion':
+        if (intrusion) setIntrusion({ ...intrusion, max_size: pts });
+        break;
+      case 'entrance':
+        if (regionEntrance) setRegionEntrance({ ...regionEntrance, max_size: pts });
+        break;
+      case 'exiting':
+        if (regionExiting) setRegionExiting({ ...regionExiting, max_size: pts });
+        break;
+      case 'unattended':
+        if (unattended) setUnattended({ ...unattended, max_size: pts });
+        break;
+      case 'removal':
+        if (objectRemoval) setObjectRemoval({ ...objectRemoval, max_size: pts });
+        break;
+    }
+  };
+
+  const handleStartDrawMinSize = () => {
+    if (activeSmartEvent === 'line' && lineDetection && !lineDetection.enabled) {
+      setLineDetection({ ...lineDetection, enabled: true });
+    } else if (activeSmartEvent === 'intrusion' && intrusion && !intrusion.enabled) {
+      setIntrusion({ ...intrusion, enabled: true });
+    } else if (activeSmartEvent === 'entrance' && regionEntrance && !regionEntrance.enabled) {
+      setRegionEntrance({ ...regionEntrance, enabled: true });
+    } else if (activeSmartEvent === 'exiting' && regionExiting && !regionExiting.enabled) {
+      setRegionExiting({ ...regionExiting, enabled: true });
+    } else if (activeSmartEvent === 'unattended' && unattended && !unattended.enabled) {
+      setUnattended({ ...unattended, enabled: true });
+    } else if (activeSmartEvent === 'removal' && objectRemoval && !objectRemoval.enabled) {
+      setObjectRemoval({ ...objectRemoval, enabled: true });
+    }
+    setDrawSizeMode('min');
+    setDrawSizeCorner1(null);
+    setDrawStep(null);
+    setDrawIntrusionStep(null);
+    setDrawHoverPt(null);
+    setDraggingPoint(null);
+  };
+
+  const handleStartDrawMaxSize = () => {
+    if (activeSmartEvent === 'line' && lineDetection && !lineDetection.enabled) {
+      setLineDetection({ ...lineDetection, enabled: true });
+    } else if (activeSmartEvent === 'intrusion' && intrusion && !intrusion.enabled) {
+      setIntrusion({ ...intrusion, enabled: true });
+    } else if (activeSmartEvent === 'entrance' && regionEntrance && !regionEntrance.enabled) {
+      setRegionEntrance({ ...regionEntrance, enabled: true });
+    } else if (activeSmartEvent === 'exiting' && regionExiting && !regionExiting.enabled) {
+      setRegionExiting({ ...regionExiting, enabled: true });
+    } else if (activeSmartEvent === 'unattended' && unattended && !unattended.enabled) {
+      setUnattended({ ...unattended, enabled: true });
+    } else if (activeSmartEvent === 'removal' && objectRemoval && !objectRemoval.enabled) {
+      setObjectRemoval({ ...objectRemoval, enabled: true });
+    }
+    setDrawSizeMode('max');
+    setDrawSizeCorner1(null);
+    setDrawStep(null);
+    setDrawIntrusionStep(null);
+    setDrawHoverPt(null);
+    setDraggingPoint(null);
+  };
+
+  const handleClearMinSize = () => updateCurrentMinSize(undefined);
+  const handleClearMaxSize = () => updateCurrentMaxSize(undefined);
+  const handleClearAllSizes = () => {
+    updateCurrentMinSize(undefined);
+    updateCurrentMaxSize(undefined);
+  };
+
+  const handleStartDragSizeCorner = (type: 'min' | 'max', cornerIdx: number, e: React.PointerEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    const currentPts = type === 'min' ? getCurrentMinSize() : getCurrentMaxSize();
+    if (!currentPts || currentPts.length < 4) return;
+    const oppIdx = (cornerIdx + 2) % 4;
+    setDragSizeAnchorPos(currentPts[oppIdx]);
+    setDraggingPoint(`${type}-corner-${cornerIdx}`);
+  };
+
+  const handleStartDragSizeBody = (type: 'min' | 'max', e: React.PointerEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    const currentPts = type === 'min' ? getCurrentMinSize() : getCurrentMaxSize();
+    if (!currentPts || currentPts.length < 4) return;
+    const pos = getNormalizedCoordinates(e);
+    if (!pos) return;
+    setIsDraggingSizeBody(type);
+    setDragSizeBodyStart(pos);
+    setDragSizeBodyOrig(currentPts);
+    setDraggingPoint(`${type}-body`);
+  };
+
   const handleCancelDrawing = () => {
     setDrawStep(null);
     setDrawIntrusionStep(null);
@@ -681,12 +844,50 @@ export const EventsTab: React.FC<EventsTabProps> = ({
     setNormalMotionDrawPoints([]);
     setDrawHoverPt(null);
     setDraggingPoint(null);
+    setDrawSizeMode(null);
+    setDrawSizeCorner1(null);
+    setDragSizeAnchorPos(null);
+    setIsDraggingSizeBody(null);
+    setDragSizeBodyStart(null);
+    setDragSizeBodyOrig(null);
     resetGridDrag();
   };
 
   const handleSVGPointerDown = (e: React.PointerEvent<SVGSVGElement>) => {
     const pos = getNormalizedCoordinates(e);
     if (!pos) return;
+
+    // Target Size Filter (Min / Max Size) 2-click 90-degree rectangle drawing
+    if (drawSizeMode) {
+      if (!drawSizeCorner1) {
+        setDrawSizeCorner1(pos);
+        setDrawHoverPt(pos);
+      } else {
+        const p1 = drawSizeCorner1;
+        const p2 = pos;
+        const minX = Math.min(p1.x, p2.x);
+        const maxX = Math.max(p1.x, p2.x);
+        const minY = Math.min(p1.y, p2.y);
+        const maxY = Math.max(p1.y, p2.y);
+        if (maxX - minX >= 15 && maxY - minY >= 15) {
+          const rectCorners: Point[] = [
+            { x: minX, y: minY },
+            { x: maxX, y: minY },
+            { x: maxX, y: maxY },
+            { x: minX, y: maxY },
+          ];
+          if (drawSizeMode === 'min') {
+            updateCurrentMinSize(rectCorners);
+          } else {
+            updateCurrentMaxSize(rectCorners);
+          }
+        }
+        setDrawSizeMode(null);
+        setDrawSizeCorner1(null);
+        setDrawHoverPt(null);
+      }
+      return;
+    }
 
     if (activeSmartEvent === 'line' && drawStep) {
       if (!lineDetection) return;
@@ -863,6 +1064,85 @@ export const EventsTab: React.FC<EventsTabProps> = ({
 
     if (!draggingPoint) return;
 
+    // Target Size Filter Corner Resizing (Cartesian 90-degree rectangle preservation with opposite corner anchor)
+    if ((draggingPoint.startsWith('min-corner-') || draggingPoint.startsWith('max-corner-')) && dragSizeAnchorPos) {
+      const isMin = draggingPoint.startsWith('min-corner-');
+      const cornerIdx = parseInt(draggingPoint.split('-')[2], 10);
+      const anchor = dragSizeAnchorPos;
+      let newMinX = 0;
+      let newMaxX = 1000;
+      let newMinY = 0;
+      let newMaxY = 1000;
+
+      if (cornerIdx === 0) {
+        // Top-Left (Anchor is Bottom-Right)
+        newMinX = Math.max(0, Math.min(pos.x, anchor.x - 10));
+        newMinY = Math.max(0, Math.min(pos.y, anchor.y - 10));
+        newMaxX = anchor.x;
+        newMaxY = anchor.y;
+      } else if (cornerIdx === 1) {
+        // Top-Right (Anchor is Bottom-Left)
+        newMinX = anchor.x;
+        newMinY = Math.max(0, Math.min(pos.y, anchor.y - 10));
+        newMaxX = Math.min(1000, Math.max(pos.x, anchor.x + 10));
+        newMaxY = anchor.y;
+      } else if (cornerIdx === 2) {
+        // Bottom-Right (Anchor is Top-Left)
+        newMinX = anchor.x;
+        newMinY = anchor.y;
+        newMaxX = Math.min(1000, Math.max(pos.x, anchor.x + 10));
+        newMaxY = Math.min(1000, Math.max(pos.y, anchor.y + 10));
+      } else if (cornerIdx === 3) {
+        // Bottom-Left (Anchor is Top-Right)
+        newMinX = Math.max(0, Math.min(pos.x, anchor.x - 10));
+        newMinY = anchor.y;
+        newMaxX = anchor.x;
+        newMaxY = Math.min(1000, Math.max(pos.y, anchor.y + 10));
+      }
+
+      const newCoords: Point[] = [
+        { x: newMinX, y: newMinY }, // 0: TL
+        { x: newMaxX, y: newMinY }, // 1: TR
+        { x: newMaxX, y: newMaxY }, // 2: BR
+        { x: newMinX, y: newMaxY }, // 3: BL
+      ];
+
+      if (isMin) {
+        updateCurrentMinSize(newCoords);
+      } else {
+        updateCurrentMaxSize(newCoords);
+      }
+      return;
+    }
+
+    // Target Size Filter Body Translation
+    if (isDraggingSizeBody && dragSizeBodyStart && dragSizeBodyOrig && dragSizeBodyOrig.length === 4) {
+      let dx = pos.x - dragSizeBodyStart.x;
+      let dy = pos.y - dragSizeBodyStart.y;
+
+      const minX = dragSizeBodyOrig[0].x;
+      const maxX = dragSizeBodyOrig[1].x;
+      const minY = dragSizeBodyOrig[0].y;
+      const maxY = dragSizeBodyOrig[2].y;
+
+      if (minX + dx < 0) dx = -minX;
+      if (maxX + dx > 1000) dx = 1000 - maxX;
+      if (minY + dy < 0) dy = -minY;
+      if (maxY + dy > 1000) dy = 1000 - maxY;
+
+      const translatedCoords: Point[] = dragSizeBodyOrig.map((pt) => ({
+        x: pt.x + dx,
+        y: pt.y + dy,
+      }));
+
+      if (isDraggingSizeBody === 'min') {
+        updateCurrentMinSize(translatedCoords);
+      } else {
+        updateCurrentMaxSize(translatedCoords);
+      }
+      return;
+    }
+
     if (activeSmartEvent === 'line' && lineDetection) {
       const coords = [...(lineDetection.coordinates || [{ x: 200, y: 500 }, { x: 800, y: 500 }])];
       if (draggingPoint === '1') {
@@ -1038,7 +1318,7 @@ export const EventsTab: React.FC<EventsTabProps> = ({
     const pos = getNormalizedCoordinates(e);
     if (!pos) return;
 
-    if (drawStep === 'second' || drawIntrusionStep !== null || isDrawingNormalMotion) {
+    if (drawStep === 'second' || drawIntrusionStep !== null || isDrawingNormalMotion || (drawSizeMode && drawSizeCorner1)) {
       setDrawHoverPt(pos);
       return;
     }
@@ -1277,6 +1557,12 @@ export const EventsTab: React.FC<EventsTabProps> = ({
             onGridDragStart={handleGridDragStart}
             draggingPoint={draggingPoint}
             setDraggingPoint={setDraggingPoint}
+            drawSizeMode={drawSizeMode}
+            drawSizeCorner1={drawSizeCorner1}
+            currentMinSize={getCurrentMinSize()}
+            currentMaxSize={getCurrentMaxSize()}
+            onStartDragSizeCorner={handleStartDragSizeCorner}
+            onStartDragSizeBody={handleStartDragSizeBody}
           />
 
           {/* Top Right Action: Refresh Snapshot & Events (Icon Only) */}
@@ -1295,7 +1581,7 @@ export const EventsTab: React.FC<EventsTabProps> = ({
           </div>
 
           {/* Event Disabled / Not in Use Notice Banner on top of video preview */}
-          {isCurrentEventDisabled() && !drawStep && !drawIntrusionStep && !isDrawingNormalMotion && (
+          {isCurrentEventDisabled() && !drawStep && !drawIntrusionStep && !isDrawingNormalMotion && !drawSizeMode && (
             <div className="absolute top-2 left-1/2 -translate-x-1/2 bg-slate-950/85 border border-slate-700/80 text-slate-300 px-3.5 py-1 rounded-full text-xs font-medium flex items-center gap-2 shadow-xl backdrop-blur-md pointer-events-none z-10">
               <span className="w-2 h-2 rounded-full bg-rose-500 shrink-0" />
               <span>{getCurrentEventName()} is disabled (not used)</span>
@@ -1303,10 +1589,14 @@ export const EventsTab: React.FC<EventsTabProps> = ({
           )}
 
           {/* Step Instruction Banner during Drawing */}
-          {(drawStep || drawIntrusionStep || isDrawingNormalMotion) && (
+          {(drawStep || drawIntrusionStep || isDrawingNormalMotion || drawSizeMode) && (
             <div className="absolute top-3 left-1/2 -translate-x-1/2 bg-slate-900/95 border border-amber-500/80 text-amber-300 px-3.5 py-1.5 rounded-full text-xs font-semibold flex items-center gap-2 shadow-2xl backdrop-blur-md animate-pulse">
               <Crosshair className="w-4 h-4 text-amber-400" />
               <span>
+                {drawSizeMode === 'min' && !drawSizeCorner1 && 'Min. Size Filter: Click to place Corner 1 of 90° Rectangle'}
+                {drawSizeMode === 'min' && drawSizeCorner1 && 'Min. Size Filter: Click opposite corner to complete 90° Rectangle'}
+                {drawSizeMode === 'max' && !drawSizeCorner1 && 'Max. Size Filter: Click to place Corner 1 of 90° Rectangle'}
+                {drawSizeMode === 'max' && drawSizeCorner1 && 'Max. Size Filter: Click opposite corner to complete 90° Rectangle'}
                 {isDrawingNormalMotion && `Click to place polygon vertices (${normalMotionDrawPoints.length} placed, at least 3 required)`}
                 {drawStep === 'first' && (
                   activeSmartEvent === 'motion'
@@ -1380,6 +1670,12 @@ export const EventsTab: React.FC<EventsTabProps> = ({
           supportsTargetDetection={supportsTargetDetection}
           onStartDrawing={handleStartDrawing}
           onSave={handleSaveLineDetection}
+          onStartDrawMinSize={handleStartDrawMinSize}
+          onStartDrawMaxSize={handleStartDrawMaxSize}
+          onClearMinSize={handleClearMinSize}
+          onClearMaxSize={handleClearMaxSize}
+          onClearAllSizes={handleClearAllSizes}
+          drawingMode={drawSizeMode}
         />
       )}
 
@@ -1390,6 +1686,12 @@ export const EventsTab: React.FC<EventsTabProps> = ({
           supportsTargetDetection={supportsTargetDetection}
           onStartDrawing={() => handleStart4PointDrawing('intrusion')}
           onSave={handleSaveIntrusion}
+          onStartDrawMinSize={handleStartDrawMinSize}
+          onStartDrawMaxSize={handleStartDrawMaxSize}
+          onClearMinSize={handleClearMinSize}
+          onClearMaxSize={handleClearMaxSize}
+          onClearAllSizes={handleClearAllSizes}
+          drawingMode={drawSizeMode}
         />
       )}
 
@@ -1408,6 +1710,12 @@ export const EventsTab: React.FC<EventsTabProps> = ({
           setUnattended={setUnattended}
           onStartDrawing={() => handleStart4PointDrawing('unattended')}
           onSave={handleSaveUnattended}
+          onStartDrawMinSize={handleStartDrawMinSize}
+          onStartDrawMaxSize={handleStartDrawMaxSize}
+          onClearMinSize={handleClearMinSize}
+          onClearMaxSize={handleClearMaxSize}
+          onClearAllSizes={handleClearAllSizes}
+          drawingMode={drawSizeMode}
         />
       )}
 
@@ -1417,6 +1725,12 @@ export const EventsTab: React.FC<EventsTabProps> = ({
           setObjectRemoval={setObjectRemoval}
           onStartDrawing={() => handleStart4PointDrawing('removal')}
           onSave={handleSaveObjectRemoval}
+          onStartDrawMinSize={handleStartDrawMinSize}
+          onStartDrawMaxSize={handleStartDrawMaxSize}
+          onClearMinSize={handleClearMinSize}
+          onClearMaxSize={handleClearMaxSize}
+          onClearAllSizes={handleClearAllSizes}
+          drawingMode={drawSizeMode}
         />
       )}
 
@@ -1427,6 +1741,12 @@ export const EventsTab: React.FC<EventsTabProps> = ({
           supportsTargetDetection={supportsTargetDetection}
           onStartDrawing={() => handleStart4PointDrawing('entrance')}
           onSave={handleSaveRegionEntrance}
+          onStartDrawMinSize={handleStartDrawMinSize}
+          onStartDrawMaxSize={handleStartDrawMaxSize}
+          onClearMinSize={handleClearMinSize}
+          onClearMaxSize={handleClearMaxSize}
+          onClearAllSizes={handleClearAllSizes}
+          drawingMode={drawSizeMode}
         />
       )}
 
@@ -1437,6 +1757,12 @@ export const EventsTab: React.FC<EventsTabProps> = ({
           supportsTargetDetection={supportsTargetDetection}
           onStartDrawing={() => handleStart4PointDrawing('exiting')}
           onSave={handleSaveRegionExiting}
+          onStartDrawMinSize={handleStartDrawMinSize}
+          onStartDrawMaxSize={handleStartDrawMaxSize}
+          onClearMinSize={handleClearMinSize}
+          onClearMaxSize={handleClearMaxSize}
+          onClearAllSizes={handleClearAllSizes}
+          drawingMode={drawSizeMode}
         />
       )}
     </div>

@@ -44,6 +44,12 @@ interface EventsSvgOverlayProps {
   onGridDragStart: (r: number, c: number) => void;
   draggingPoint: string | null;
   setDraggingPoint: (pt: string | null) => void;
+  drawSizeMode?: 'min' | 'max' | null;
+  drawSizeCorner1?: Point | null;
+  currentMinSize?: Point[];
+  currentMaxSize?: Point[];
+  onStartDragSizeCorner?: (type: 'min' | 'max', cornerIndex: number, e: React.PointerEvent) => void;
+  onStartDragSizeBody?: (type: 'min' | 'max', e: React.PointerEvent) => void;
 }
 
 export const EventsSvgOverlay: React.FC<EventsSvgOverlayProps> = ({
@@ -78,6 +84,12 @@ export const EventsSvgOverlay: React.FC<EventsSvgOverlayProps> = ({
   onGridDragStart,
   draggingPoint,
   setDraggingPoint,
+  drawSizeMode,
+  drawSizeCorner1,
+  currentMinSize,
+  currentMaxSize,
+  onStartDragSizeCorner,
+  onStartDragSizeBody,
 }) => {
   // Line points & perpendicular arrows
   const pt1 = lineDetection?.coordinates?.[0] || { x: 200, y: 500 };
@@ -163,6 +175,25 @@ export const EventsSvgOverlay: React.FC<EventsSvgOverlayProps> = ({
         { x: 200, y: 800 },
       ];
 
+  const isEventEnabled = (): boolean => {
+    switch (activeSmartEvent) {
+      case 'line':
+        return Boolean(lineDetection?.enabled);
+      case 'intrusion':
+        return Boolean(intrusion?.enabled);
+      case 'entrance':
+        return Boolean(regionEntrance?.enabled);
+      case 'exiting':
+        return Boolean(regionExiting?.enabled);
+      case 'unattended':
+        return Boolean(unattended?.enabled);
+      case 'removal':
+        return Boolean(objectRemoval?.enabled);
+      default:
+        return false;
+    }
+  };
+
   // Helper to render 4-point interactive zone overlay
   const render4PointRegionSVG = (
     pts: Point[],
@@ -236,6 +267,7 @@ export const EventsSvgOverlay: React.FC<EventsSvgOverlayProps> = ({
             stroke={strokeColor}
             strokeWidth="8"
             strokeLinejoin="round"
+            className="pointer-events-none"
           />
           {pts.map((p, idx) => (
             <g
@@ -267,7 +299,7 @@ export const EventsSvgOverlay: React.FC<EventsSvgOverlayProps> = ({
       className={`absolute inset-0 w-full h-full touch-none select-none ${
         draggingPoint
           ? 'cursor-grabbing'
-          : drawStep || drawIntrusionStep
+          : drawStep || drawIntrusionStep || drawSizeMode
           ? 'cursor-crosshair'
           : activeSmartEvent === 'motion' && (motion?.mode || 'normal') === 'normal'
           ? 'cursor-crosshair'
@@ -289,6 +321,194 @@ export const EventsSvgOverlay: React.FC<EventsSvgOverlayProps> = ({
           <path d="M 0 1 L 10 5 L 0 9 z" fill="#e2e8f0" />
         </marker>
       </defs>
+
+      {/* --- TARGET SIZE FILTER (MIN & MAX SIZE 90° RECTANGLES - BEHIND EVENT LINES & POLYGONS) --- */}
+      {['line', 'intrusion', 'entrance', 'exiting', 'unattended', 'removal'].includes(activeSmartEvent) && (
+        <>
+          {/* 1. Live 90° Rectangle Drawing Preview */}
+          {drawSizeMode && drawSizeCorner1 && drawHoverPt && (() => {
+            const pMinX = Math.min(drawSizeCorner1.x, drawHoverPt.x);
+            const pMaxX = Math.max(drawSizeCorner1.x, drawHoverPt.x);
+            const pMinY = Math.min(drawSizeCorner1.y, drawHoverPt.y);
+            const pMaxY = Math.max(drawSizeCorner1.y, drawHoverPt.y);
+            const pBadgeX = Math.max(10, Math.min(1000 - 145, pMinX + 8));
+            const pBadgeY = pMinY >= 45 ? pMinY - 42 : Math.min(1000 - 45, pMinY + 8);
+            const color = drawSizeMode === 'min' ? '#10b981' : '#0ea5e9';
+            const textColor = drawSizeMode === 'min' ? '#34d399' : '#38bdf8';
+            const label = drawSizeMode === 'min' ? 'Min. Size' : 'Max. Size';
+
+            return (
+              <g className="pointer-events-none">
+                <rect
+                  x={pMinX}
+                  y={pMinY}
+                  width={Math.abs(pMaxX - pMinX)}
+                  height={Math.abs(pMaxY - pMinY)}
+                  fill={drawSizeMode === 'min' ? 'rgba(16, 185, 129, 0.24)' : 'rgba(14, 165, 233, 0.24)'}
+                  stroke={color}
+                  strokeWidth="3.5"
+                  strokeDasharray="8,6"
+                  className="animate-pulse"
+                />
+                <g transform={`translate(${pBadgeX}, ${pBadgeY})`}>
+                  <rect x="0" y="0" width="135" height="36" rx="6" fill="rgba(15, 23, 42, 0.95)" stroke={color} strokeWidth="2.5" />
+                  <text x="67.5" y="18" fill={textColor} fontSize="21" fontWeight="bold" textAnchor="middle" dominantBaseline="central">
+                    {label}
+                  </text>
+                </g>
+              </g>
+            );
+          })()}
+
+          {/* 2. Max Size 90° Rectangle Filter (Rendered in Sky Blue #0ea5e9 - Hidden when event is disabled) */}
+          {isEventEnabled() && currentMaxSize && currentMaxSize.length >= 4 && drawSizeMode !== 'max' && (() => {
+            const minX = Math.min(...currentMaxSize.map((p) => p.x));
+            const maxX = Math.max(...currentMaxSize.map((p) => p.x));
+            const minY = Math.min(...currentMaxSize.map((p) => p.y));
+            const maxY = Math.max(...currentMaxSize.map((p) => p.y));
+            const w = maxX - minX;
+            const h = maxY - minY;
+            if (w < 10 || h < 10) return null;
+
+            const badgeX = Math.max(10, Math.min(1000 - 145, minX + 8));
+            const badgeY = minY >= 45 ? minY - 42 : Math.min(1000 - 45, minY + 8);
+
+            const corners: Point[] = [
+              { x: minX, y: minY },
+              { x: maxX, y: minY },
+              { x: maxX, y: maxY },
+              { x: minX, y: maxY },
+            ];
+
+            return (
+              <g key="max-target-size-filter">
+                {/* Draggable Body */}
+                <rect
+                  x={minX}
+                  y={minY}
+                  width={w}
+                  height={h}
+                  fill="rgba(14, 165, 233, 0.12)"
+                  stroke="#0ea5e9"
+                  strokeWidth="2.5"
+                  strokeDasharray="6,4"
+                  className="cursor-move hover:fill-[rgba(14,165,233,0.22)] transition-colors"
+                  onPointerDown={(e) => onStartDragSizeBody?.('max', e)}
+                />
+                {/* Max Size Badge Pill with Prominent Readable Text */}
+                <g
+                  transform={`translate(${badgeX}, ${badgeY})`}
+                  className="cursor-move pointer-events-none"
+                >
+                  <rect x="0" y="0" width="135" height="36" rx="6" fill="rgba(15, 23, 42, 0.95)" stroke="#0ea5e9" strokeWidth="2.5" />
+                  <text x="67.5" y="18" fill="#38bdf8" fontSize="21" fontWeight="bold" textAnchor="middle" dominantBaseline="central">
+                    Max. Size
+                  </text>
+                </g>
+
+                {/* 4 Corner Resize Handles */}
+                {corners.map((pt, idx) => {
+                  const cursorClass = idx === 0 || idx === 2 ? 'cursor-nwse-resize' : 'cursor-nesw-resize';
+                  return (
+                    <g key={`max-c-${idx}`} className={cursorClass}>
+                      <circle
+                        cx={pt.x}
+                        cy={pt.y}
+                        r="28"
+                        fill="transparent"
+                        onPointerDown={(e) => onStartDragSizeCorner?.('max', idx, e)}
+                      />
+                      <circle
+                        cx={pt.x}
+                        cy={pt.y}
+                        r="14"
+                        fill="#0ea5e9"
+                        stroke="#ffffff"
+                        strokeWidth="3"
+                        className="pointer-events-none drop-shadow-md"
+                      />
+                    </g>
+                  );
+                })}
+              </g>
+            );
+          })()}
+
+          {/* 3. Min Size 90° Rectangle Filter (Rendered in Emerald #10b981 - Hidden when event is disabled) */}
+          {isEventEnabled() && currentMinSize && currentMinSize.length >= 4 && drawSizeMode !== 'min' && (() => {
+            const minX = Math.min(...currentMinSize.map((p) => p.x));
+            const maxX = Math.max(...currentMinSize.map((p) => p.x));
+            const minY = Math.min(...currentMinSize.map((p) => p.y));
+            const maxY = Math.max(...currentMinSize.map((p) => p.y));
+            const w = maxX - minX;
+            const h = maxY - minY;
+            if (w < 10 || h < 10) return null;
+
+            const badgeX = Math.max(10, Math.min(1000 - 145, minX + 8));
+            const badgeY = minY >= 45 ? minY - 42 : Math.min(1000 - 45, minY + 8);
+
+            const corners: Point[] = [
+              { x: minX, y: minY },
+              { x: maxX, y: minY },
+              { x: maxX, y: maxY },
+              { x: minX, y: maxY },
+            ];
+
+            return (
+              <g key="min-target-size-filter">
+                {/* Draggable Body */}
+                <rect
+                  x={minX}
+                  y={minY}
+                  width={w}
+                  height={h}
+                  fill="rgba(16, 185, 129, 0.16)"
+                  stroke="#10b981"
+                  strokeWidth="2.5"
+                  strokeDasharray="6,4"
+                  className="cursor-move hover:fill-[rgba(16,185,129,0.25)] transition-colors"
+                  onPointerDown={(e) => onStartDragSizeBody?.('min', e)}
+                />
+                {/* Min Size Badge Pill with Prominent Readable Text */}
+                <g
+                  transform={`translate(${badgeX}, ${badgeY})`}
+                  className="cursor-move pointer-events-none"
+                >
+                  <rect x="0" y="0" width="135" height="36" rx="6" fill="rgba(15, 23, 42, 0.95)" stroke="#10b981" strokeWidth="2.5" />
+                  <text x="67.5" y="18" fill="#34d399" fontSize="21" fontWeight="bold" textAnchor="middle" dominantBaseline="central">
+                    Min. Size
+                  </text>
+                </g>
+
+                {/* 4 Corner Resize Handles */}
+                {corners.map((pt, idx) => {
+                  const cursorClass = idx === 0 || idx === 2 ? 'cursor-nwse-resize' : 'cursor-nesw-resize';
+                  return (
+                    <g key={`min-c-${idx}`} className={cursorClass}>
+                      <circle
+                        cx={pt.x}
+                        cy={pt.y}
+                        r="28"
+                        fill="transparent"
+                        onPointerDown={(e) => onStartDragSizeCorner?.('min', idx, e)}
+                      />
+                      <circle
+                        cx={pt.x}
+                        cy={pt.y}
+                        r="14"
+                        fill="#10b981"
+                        stroke="#ffffff"
+                        strokeWidth="3"
+                        className="pointer-events-none drop-shadow-md"
+                      />
+                    </g>
+                  );
+                })}
+              </g>
+            );
+          })()}
+        </>
+      )}
 
       {/* --- OVERLAY 1: LINE CROSSING --- */}
       {activeSmartEvent === 'line' && lineDetection && (

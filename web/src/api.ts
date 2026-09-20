@@ -3,6 +3,7 @@ import type {
   Camera,
   CameraCapabilities,
   CameraDiscoveryResponse,
+  CameraEvent,
   DeviceInfo,
   DeviceTime,
   FieldDetection,
@@ -159,6 +160,14 @@ export const api = {
     return `${protocol}//${host}/api/ws/live?cameraId=${cameraId}${token ? `&token=${encodeURIComponent(token)}` : ''}`;
   },
 
+  getEventsWsUrl: () => {
+    const token = getAuthToken();
+    const loc = window.location;
+    const protocol = loc.protocol === 'https:' ? 'wss:' : 'ws:';
+    const host = loc.host;
+    return `${protocol}//${host}/api/ws/events${token ? `?token=${encodeURIComponent(token)}` : ''}`;
+  },
+
   getVideoUrl: (cameraId: number, datadir: number, file: number, start: number, end: number, resolution?: string) => {
     const token = getAuthToken();
     const res = resolution || 'original';
@@ -198,6 +207,9 @@ export const api = {
     }
     return request<RecordingDateInfo[]>(`/events/dates?${query.toString()}`);
   },
+
+  getLiveEvents: () =>
+    request<{ active: CameraEvent[]; recent: CameraEvent[] }>('/events/live'),
 
   // Bookmarks
   getBookmarks: () =>

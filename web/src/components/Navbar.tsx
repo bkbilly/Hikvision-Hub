@@ -11,7 +11,8 @@ import {
   X, 
   ShieldCheck, 
   ChevronDown, 
-  Bookmark 
+  Bookmark,
+  Radio
 } from 'lucide-react';
 
 interface NavbarProps {
@@ -23,6 +24,9 @@ interface NavbarProps {
   onOpenSettings: () => void;
   onOpenBookmarks?: () => void;
   bookmarksCount?: number;
+  onOpenEvents?: () => void;
+  activeEventsCount?: number;
+  unreadEventsCount?: number;
   onLogout: () => void;
   onRescan: () => void;
   isScanning: boolean;
@@ -38,6 +42,9 @@ export const Navbar: React.FC<NavbarProps> = ({
   onOpenSettings,
   onOpenBookmarks,
   bookmarksCount = 0,
+  onOpenEvents,
+  activeEventsCount = 0,
+  unreadEventsCount = 0,
   onLogout,
   onRescan,
   isScanning,
@@ -152,6 +159,31 @@ export const Navbar: React.FC<NavbarProps> = ({
             <RefreshCw className={`w-4 h-4 ${isScanning ? 'animate-spin text-blue-400' : ''}`} />
           </button>
 
+          {/* Live Events Feed button */}
+          {onOpenEvents && (
+            <button
+              onClick={onOpenEvents}
+              title="Live Camera Alert Feed"
+              className={`relative flex items-center gap-1.5 px-2 sm:px-2.5 py-1.5 text-xs sm:text-sm font-medium rounded-lg border transition-all cursor-pointer ${
+                activeEventsCount > 0
+                  ? 'bg-amber-950/60 border-amber-500/80 text-amber-300 shadow-sm shadow-amber-500/20'
+                  : 'text-slate-300 hover:text-white bg-slate-900 border-slate-800 hover:border-slate-700'
+              }`}
+            >
+              <Radio className={`w-4 h-4 ${activeEventsCount > 0 ? 'text-amber-400 animate-pulse' : 'text-slate-400'} shrink-0`} />
+              <span className="hidden xl:inline">Events</span>
+              {activeEventsCount > 0 ? (
+                <span className="px-1.5 py-0.2 bg-amber-500 text-slate-950 font-bold text-[10px] rounded-full animate-bounce">
+                  {activeEventsCount}
+                </span>
+              ) : unreadEventsCount > 0 ? (
+                <span className="px-1.5 py-0.2 bg-blue-600 text-white font-bold text-[10px] rounded-full">
+                  {unreadEventsCount}
+                </span>
+              ) : null}
+            </button>
+          )}
+
           {/* Bookmarks button */}
           {onOpenBookmarks && (
             <button
@@ -240,17 +272,33 @@ export const Navbar: React.FC<NavbarProps> = ({
             </div>
           </div>
 
-          <div className="grid grid-cols-2 gap-2 pt-2 border-t border-slate-800/80">
+          <div className="grid grid-cols-3 gap-1.5 pt-2 border-t border-slate-800/80">
+            {onOpenEvents && (
+              <button
+                onClick={() => {
+                  onOpenEvents();
+                  setMobileMenuOpen(false);
+                }}
+                className={`flex items-center justify-center gap-1.5 py-2 px-2 text-xs font-medium rounded-lg border transition-colors ${
+                  activeEventsCount > 0
+                    ? 'bg-amber-950/60 border-amber-500/80 text-amber-300'
+                    : 'bg-slate-900 border-slate-800 text-blue-400 hover:bg-slate-800'
+                }`}
+              >
+                <Radio className={`w-3.5 h-3.5 shrink-0 ${activeEventsCount > 0 ? 'animate-pulse text-amber-400' : ''}`} />
+                <span className="truncate">Events {activeEventsCount > 0 ? `(${activeEventsCount})` : ''}</span>
+              </button>
+            )}
             {onOpenBookmarks && (
               <button
                 onClick={() => {
                   onOpenBookmarks();
                   setMobileMenuOpen(false);
                 }}
-                className="flex items-center justify-center gap-1.5 py-2 px-3 text-xs font-medium rounded-lg bg-slate-900 border border-slate-800 text-amber-400 hover:bg-slate-800 transition-colors"
+                className="flex items-center justify-center gap-1.5 py-2 px-2 text-xs font-medium rounded-lg bg-slate-900 border border-slate-800 text-amber-400 hover:bg-slate-800 transition-colors"
               >
                 <Bookmark className="w-3.5 h-3.5 fill-current shrink-0" />
-                <span className="truncate">Bookmarks ({bookmarksCount})</span>
+                <span className="truncate">Saved ({bookmarksCount})</span>
               </button>
             )}
             <button
@@ -258,7 +306,7 @@ export const Navbar: React.FC<NavbarProps> = ({
                 onOpenSettings();
                 setMobileMenuOpen(false);
               }}
-              className="flex items-center justify-center gap-1.5 py-2 px-3 text-xs font-medium rounded-lg bg-slate-900 border border-slate-800 text-slate-300 hover:bg-slate-800 transition-colors"
+              className="flex items-center justify-center gap-1.5 py-2 px-2 text-xs font-medium rounded-lg bg-slate-900 border border-slate-800 text-slate-300 hover:bg-slate-800 transition-colors"
             >
               <Settings className="w-3.5 h-3.5 text-slate-400 shrink-0" />
               <span>Settings</span>

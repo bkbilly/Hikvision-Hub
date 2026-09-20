@@ -12,12 +12,13 @@ import (
 )
 
 type EventHandler struct {
-	db      *db.DB
-	crawler *hikvision.Crawler
+	db           *db.DB
+	crawler      *hikvision.Crawler
+	alertManager *hikvision.AlertStreamManager
 }
 
-func NewEventHandler(db *db.DB, crawler *hikvision.Crawler) *EventHandler {
-	return &EventHandler{db: db, crawler: crawler}
+func NewEventHandler(db *db.DB, crawler *hikvision.Crawler, alertManager *hikvision.AlertStreamManager) *EventHandler {
+	return &EventHandler{db: db, crawler: crawler, alertManager: alertManager}
 }
 
 type EventResponseItem struct {
@@ -180,5 +181,21 @@ func parseFlexibleTime(val string) (time.Time, bool) {
 		}
 	}
 	return time.Time{}, false
+}
+
+// GetLiveEvents returns the active and recent real-time camera events.
+func (h *EventHandler) GetLiveEvents(w http.ResponseWriter, r *http.Request) {
+	if h.alertManager == nil {
+		writeJSON(w, http.StatusOK, map[string]interface{}{
+			"active": []interface{}{},
+			"recent": []interface{}{},
+		})
+		return
+	}
+
+	writeJSON(w, http.StatusOK, map[string]interface{}{
+		"active": h.alertManager.GetActiveEvents(),
+		"recent": h.alertManager.GetRecentEvents(),
+	})
 }
 

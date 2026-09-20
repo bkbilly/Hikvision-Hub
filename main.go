@@ -80,9 +80,17 @@ func main() {
 	camClient := hikvision.NewCameraClient()
 	crawler := hikvision.NewCrawler(database)
 
-	// Start background crawler (every 10 minutes)
+	// Background tasks context
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
+
+	// Initialize real-time AlertStreamManager for live camera event stream
+	alertManager := hikvision.NewAlertStreamManager(300)
+	initialCameras, _ := database.ListCameras()
+	alertManager.Start(ctx, initialCameras)
+	defer alertManager.Stop()
+
+	// Start background crawler (every 10 minutes)
 	crawler.StartBackgroundSync(ctx, 10*time.Minute)
 
 	// Start background cache auto-pruner (prunes clips >24h old or >5GB, runs every 1h)
@@ -96,13 +104,14 @@ func main() {
 	}
 
 	router := api.SetupRouter(api.Config{
-		DB:         database,
-		Auth:       authManager,
-		Streamer:   streamer,
-		CamClient:  camClient,
-		Crawler:    crawler,
-		StaticFS:   staticFS,
-		AppVersion: Version,
+		DB:           database,
+		Auth:         authManager,
+		Streamer:     streamer,
+		CamClient:    camClient,
+		Crawler:      crawler,
+		AlertManager: alertManager,
+		StaticFS:     staticFS,
+		AppVersion:   Version,
 	})
 
 	server := &http.Server{

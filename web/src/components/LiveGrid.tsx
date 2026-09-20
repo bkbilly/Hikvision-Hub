@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
-import type { Camera } from '../types';
+import type { Camera, CameraEvent } from '../types';
 import { api } from '../api';
 import { 
   RefreshCw, 
@@ -8,7 +8,12 @@ import {
   Pause,
   WifiOff, 
   Settings2,
-  Sliders
+  Sliders,
+  Footprints,
+  Crosshair,
+  ShieldAlert,
+  EyeOff,
+  Activity
 } from 'lucide-react';
 
 interface LiveGridProps {
@@ -17,6 +22,7 @@ interface LiveGridProps {
   onOpenSettings: () => void;
   onOpenDeviceSettings?: (camera: Camera) => void;
   isPaused?: boolean;
+  activeEventMap?: Record<number, CameraEvent[]>;
 }
 
 interface LiveStreamViewProps {
@@ -175,6 +181,7 @@ interface CameraCardProps {
   onSelectForPlayback: (cam: Camera) => void;
   onFullscreen: (cam: Camera) => void;
   onOpenDeviceSettings?: (cam: Camera) => void;
+  activeEvents?: CameraEvent[];
 }
 
 const CameraCard: React.FC<CameraCardProps> = ({
@@ -184,9 +191,59 @@ const CameraCard: React.FC<CameraCardProps> = ({
   onSelectForPlayback,
   onFullscreen,
   onOpenDeviceSettings,
+  activeEvents = [],
 }) => {
+  const hasActiveEvent = activeEvents.length > 0;
+  const primaryEvent = hasActiveEvent ? activeEvents[0] : null;
+
+  let ringClass = '';
+
+  if (primaryEvent) {
+    if (primaryEvent.event_type === 'intrusion' || primaryEvent.event_type === 'tamper' || primaryEvent.event_type === 'videoloss') {
+      ringClass = 'ring-2 ring-rose-500 shadow-[0_0_20px_rgba(244,63,94,0.35)]';
+    } else {
+      ringClass = 'ring-2 ring-amber-500 shadow-[0_0_20px_rgba(245,158,11,0.35)]';
+    }
+  }
+
+  const getEventIcon = (type: string) => {
+    switch (type) {
+      case 'motion': return <Footprints className="w-3 h-3" />;
+      case 'line_crossing': return <Crosshair className="w-3 h-3" />;
+      case 'intrusion': return <ShieldAlert className="w-3 h-3" />;
+      case 'tamper': return <EyeOff className="w-3 h-3" />;
+      case 'videoloss': return <WifiOff className="w-3 h-3" />;
+      default: return <Activity className="w-3 h-3" />;
+    }
+  };
+
+  const getEventColor = (type: string) => {
+    switch (type) {
+      case 'intrusion': return 'bg-rose-500/30 border-rose-500/80 text-rose-200';
+      case 'line_crossing': return 'bg-cyan-500/30 border-cyan-500/80 text-cyan-200';
+      case 'tamper': return 'bg-purple-500/30 border-purple-500/80 text-purple-200';
+      case 'videoloss': return 'bg-red-500/30 border-red-500/80 text-red-200';
+      default: return 'bg-amber-500/30 border-amber-500/80 text-amber-200';
+    }
+  };
+
+  const getShortLabel = (type: string) => {
+    switch (type) {
+      case 'motion': return 'Motion';
+      case 'line_crossing': return 'Line';
+      case 'intrusion': return 'Intrusion';
+      case 'tamper': return 'Tamper';
+      case 'videoloss': return 'Loss';
+      case 'region_entrance': return 'Entrance';
+      case 'region_exiting': return 'Exiting';
+      case 'unattended_baggage': return 'Baggage';
+      case 'object_removal': return 'Removal';
+      default: return 'Alarm';
+    }
+  };
+
   return (
-    <div className="group relative glass-panel rounded-xl overflow-hidden border border-slate-800 hover:border-blue-500/40 transition-all bg-slate-950 aspect-video flex flex-col justify-between shadow-lg">
+    <div className={`group relative glass-panel rounded-xl overflow-hidden border border-slate-800 hover:border-blue-500/40 transition-all bg-slate-950 aspect-video flex flex-col justify-between shadow-lg ${ringClass}`}>
       {/* Live Video Stream Viewport */}
       <div className="absolute inset-0 bg-slate-950 flex items-center justify-center overflow-hidden">
         <LiveStreamView
@@ -199,24 +256,42 @@ const CameraCard: React.FC<CameraCardProps> = ({
       </div>
 
       {/* Top Overlay Badge */}
-      <div className="relative z-10 p-2.5 flex items-center justify-between bg-gradient-to-b from-slate-950/85 via-slate-950/30 to-transparent pointer-events-none">
-        <div className="flex items-center gap-2">
-          {!isPaused ? (
-            <div className="flex items-center gap-1.5 px-2 py-0.5 rounded-full bg-rose-500/20 border border-rose-500/40 text-[10px] font-bold text-rose-400 uppercase tracking-wider shadow-sm backdrop-blur-sm">
-              <span className="w-1.5 h-1.5 rounded-full bg-rose-500 animate-pulse" />
-              <span>LIVE</span>
-            </div>
-          ) : (
-            <div className="flex items-center gap-1.5 px-2 py-0.5 rounded-full bg-slate-800/80 border border-slate-700 text-[10px] font-bold text-slate-400 uppercase tracking-wider shadow-sm backdrop-blur-sm">
-              <span>PAUSED</span>
+      <div className="relative z-10 p-2.5 flex items-start justify-between bg-gradient-to-b from-slate-950/85 via-slate-950/30 to-transparent pointer-events-none">
+        <div className="flex flex-col gap-1 items-start min-w-0 max-w-[calc(100%-4.5rem)]">
+          <div className="flex items-center gap-2 min-w-0">
+            {!isPaused ? (
+              <div className="flex items-center gap-1.5 px-2 py-0.5 rounded-full bg-rose-500/20 border border-rose-500/40 text-[10px] font-bold text-rose-400 uppercase tracking-wider shadow-sm backdrop-blur-sm shrink-0">
+                <span className="w-1.5 h-1.5 rounded-full bg-rose-500 animate-pulse" />
+                <span>LIVE</span>
+              </div>
+            ) : (
+              <div className="flex items-center gap-1.5 px-2 py-0.5 rounded-full bg-slate-800/80 border border-slate-700 text-[10px] font-bold text-slate-400 uppercase tracking-wider shadow-sm backdrop-blur-sm shrink-0">
+                <span>PAUSED</span>
+              </div>
+            )}
+            <span className="font-semibold text-xs sm:text-sm text-white drop-shadow-md truncate">
+              {cam.name}
+            </span>
+          </div>
+
+          {/* Active Event Badges: positioned below the LIVE row with short description/icon */}
+          {hasActiveEvent && (
+            <div className="flex items-center gap-1.5 flex-wrap">
+              {activeEvents.map((evt) => (
+                <div
+                  key={evt.id || evt.event_type}
+                  title={`${evt.event_label} (Active)`}
+                  className={`flex items-center gap-1 px-1.5 py-0.5 rounded-md border text-[10px] font-bold tracking-wider shadow-md animate-pulse backdrop-blur-md ${getEventColor(evt.event_type)}`}
+                >
+                  {getEventIcon(evt.event_type)}
+                  <span className="text-[10px] uppercase">{getShortLabel(evt.event_type)}</span>
+                </div>
+              ))}
             </div>
           )}
-          <span className="font-semibold text-xs sm:text-sm text-white drop-shadow-md truncate">
-            {cam.name}
-          </span>
         </div>
 
-        <div className="flex items-center gap-1 opacity-90 group-hover:opacity-100 transition-opacity pointer-events-auto">
+        <div className="flex items-center gap-1 opacity-90 group-hover:opacity-100 transition-opacity pointer-events-auto shrink-0">
           {onOpenDeviceSettings && (
             <button
               onClick={() => onOpenDeviceSettings(cam)}
@@ -260,6 +335,7 @@ export const LiveGrid: React.FC<LiveGridProps> = ({
   onOpenSettings,
   onOpenDeviceSettings,
   isPaused = false,
+  activeEventMap,
 }) => {
   const [refreshKey, setRefreshKey] = useState<number>(Date.now());
   const [isTabVisible, setIsTabVisible] = useState<boolean>(() => !document.hidden);
@@ -389,6 +465,7 @@ export const LiveGrid: React.FC<LiveGridProps> = ({
               onSelectForPlayback={onSelectCameraForPlayback}
               onFullscreen={(c) => setFullscreenCam(c)}
               onOpenDeviceSettings={onOpenDeviceSettings}
+              activeEvents={activeEventMap?.[cam.id] || []}
             />
           );
         })}

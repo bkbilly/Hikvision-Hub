@@ -13,6 +13,8 @@ import { BookmarksModal } from './components/BookmarksModal';
 import { SaveBookmarkModal } from './components/SaveBookmarkModal';
 import { LoginModal } from './components/LoginModal';
 import { PhotoViewer } from './components/PhotoViewer';
+import { LiveEventsDrawer } from './components/LiveEventsDrawer';
+import { useLiveEvents } from './hooks/useLiveEvents';
 
 export function App() {
   const [isAuthenticated, setIsAuthenticated] = useState<boolean>(!!getAuthToken());
@@ -29,8 +31,21 @@ export function App() {
   const [isSaveBookmarkOpen, setIsSaveBookmarkOpen] = useState<boolean>(false);
   const [isSettingsOpen, setIsSettingsOpen] = useState<boolean>(false);
   const [isShortcutsOpen, setIsShortcutsOpen] = useState<boolean>(false);
+  const [isLiveEventsOpen, setIsLiveEventsOpen] = useState<boolean>(false);
   const [isScanning, setIsScanning] = useState<boolean>(false);
   const [isLoadingEvents, setIsLoadingEvents] = useState<boolean>(false);
+
+  // Only connect to live camera event streams when actively viewing Live Grid or Events drawer
+  const isEventsViewerActive = isAuthenticated && (activeTab === 'live' || isLiveEventsOpen);
+  const {
+    events: liveEvents,
+    activeEvents,
+    activeEventMap,
+    isConnected: isLiveWsConnected,
+    unreadCount: liveEventsUnreadCount,
+    clearEvents: clearLiveEvents,
+    resetUnread: resetLiveEventsUnread,
+  } = useLiveEvents(isEventsViewerActive);
 
   // Selected date (for 24h day-level event caching & mini-map overview)
   const [selectedDate, setSelectedDate] = useState<Date>(() => new Date());
@@ -330,6 +345,12 @@ export function App() {
         onOpenSettings={() => setIsSettingsOpen(true)}
         onOpenBookmarks={() => setIsBookmarksOpen(true)}
         bookmarksCount={bookmarks.length}
+        onOpenEvents={() => {
+          setIsLiveEventsOpen(true);
+          resetLiveEventsUnread();
+        }}
+        activeEventsCount={activeEvents.length}
+        unreadEventsCount={liveEventsUnreadCount}
         onLogout={handleLogout}
         onRescan={handleRescan}
         isScanning={isScanning}
@@ -344,6 +365,7 @@ export function App() {
             onOpenSettings={() => setIsSettingsOpen(true)}
             onOpenDeviceSettings={(cam) => setDeviceSettingsCamera(cam)}
             isPaused={!!deviceSettingsCamera || isSettingsOpen}
+            activeEventMap={activeEventMap}
           />
         ) : (
           <div className="space-y-4">
@@ -443,6 +465,29 @@ export function App() {
           onSaved={loadBookmarks}
         />
       )}
+
+      <LiveEventsDrawer
+        isOpen={isLiveEventsOpen}
+        onClose={() => setIsLiveEventsOpen(false)}
+        events={liveEvents}
+        activeEvents={activeEvents}
+        cameras={enabledCameras}
+        isConnected={isLiveWsConnected}
+        onClear={clearLiveEvents}
+        onSelectCameraPlayback={(cam, timestamp) => {
+          handleSelectCameraForPlayback(cam);
+          if (timestamp) {
+            const t = new Date(timestamp);
+            if (!isNaN(t.getTime())) {
+              handleSelectDate(t);
+            }
+          }
+        }}
+        onSelectCameraLive={(cam) => {
+          setSelectedCamera(cam);
+          setActiveTab('live');
+        }}
+      />
     </div>
   );
 }

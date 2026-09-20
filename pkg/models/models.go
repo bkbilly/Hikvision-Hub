@@ -62,6 +62,22 @@ type RecordingSegment struct {
 	MediaType   string    `json:"media_type,omitempty"` // "video" (default) or "picture"
 }
 
+// CameraEvent represents a real-time event alert emitted by camera alertStream.
+type CameraEvent struct {
+	ID          string     `json:"id"`
+	CameraID    int64      `json:"camera_id"`
+	CameraName  string     `json:"camera_name"`
+	ChannelID   int        `json:"channel_id"`
+	EventType   string     `json:"event_type"`    // normalized: motion, line_crossing, intrusion, tamper, etc.
+	RawType     string     `json:"raw_type"`      // VMD, linedetection, etc.
+	EventLabel  string     `json:"event_label"`   // "Motion Detection", "Line Crossing", etc.
+	EventState  string     `json:"event_state"`   // "active", "inactive"
+	Description string     `json:"description"`   // "Motion alarm", etc.
+	StartTime   time.Time  `json:"start_time"`
+	EndTime     *time.Time `json:"end_time,omitempty"`
+	DurationSec float64    `json:"duration_sec,omitempty"`
+}
+
 // User represents an administrator user.
 type User struct {
 	ID           int64     `json:"id"`

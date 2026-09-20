@@ -57,6 +57,21 @@ export interface RecordingSegment {
   media_type?: 'video' | 'picture';
 }
 
+export interface CameraEvent {
+  id: string;
+  camera_id: number;
+  camera_name: string;
+  channel_id: number;
+  event_type: string; // 'motion' | 'line_crossing' | 'intrusion' | 'tamper' | 'videoloss' | etc.
+  raw_type: string;
+  event_label: string;
+  event_state: 'active' | 'inactive';
+  description: string;
+  start_time: string;
+  end_time?: string;
+  duration_sec?: number;
+}
+
 export interface SystemStatus {
   version: string;
   camera_count: number;
@@ -232,6 +247,8 @@ export interface LineDetection {
   direction: string;
   detection_target?: string; // Target detection: "human", "vehicle", "all"
   coordinates?: { x: number; y: number }[];
+  min_size?: Point[];
+  max_size?: Point[];
 }
 
 export interface FieldDetection {
@@ -241,6 +258,8 @@ export interface FieldDetection {
   time_threshold: number;
   detection_target?: string; // Target detection: "human", "vehicle", "all"
   coordinates?: { x: number; y: number }[];
+  min_size?: Point[];
+  max_size?: Point[];
 }
 
 export interface RegionEntrance {
@@ -249,6 +268,8 @@ export interface RegionEntrance {
   sensitivity: number;
   detection_target?: string; // Target detection: "human", "vehicle", "all"
   coordinates?: { x: number; y: number }[];
+  min_size?: Point[];
+  max_size?: Point[];
 }
 
 export interface RegionExiting {
@@ -257,6 +278,8 @@ export interface RegionExiting {
   sensitivity: number;
   detection_target?: string; // Target detection: "human", "vehicle", "all"
   coordinates?: { x: number; y: number }[];
+  min_size?: Point[];
+  max_size?: Point[];
 }
 
 export interface UnattendedBaggage {
@@ -265,6 +288,8 @@ export interface UnattendedBaggage {
   sensitivity: number;
   time_threshold: number;
   coordinates?: { x: number; y: number }[];
+  min_size?: Point[];
+  max_size?: Point[];
 }
 
 export interface ObjectRemoval {
@@ -273,6 +298,8 @@ export interface ObjectRemoval {
   sensitivity: number;
   time_threshold: number;
   coordinates?: { x: number; y: number }[];
+  min_size?: Point[];
+  max_size?: Point[];
 }
 
 export interface TamperDetection {

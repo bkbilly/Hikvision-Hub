@@ -48,6 +48,10 @@ func (c *CameraClient) GetLineDetection(ip, username, password string, channelID
 		Coordinates:     coords,
 	}
 
+	minSize, maxSize, _ := c.getSmartCalibration(ip, username, password, channelID, "linedetection")
+	ld.MinSize = minSize
+	ld.MaxSize = maxSize
+
 	return &ld, nil
 }
 
@@ -123,6 +127,7 @@ func (c *CameraClient) SetLineDetection(ip, username, password string, channelID
 
 		data, code, _, err := c.DoRequest(ip, username, password, "PUT", path, []byte(payload1), "application/xml")
 		if err == nil && (code == http.StatusOK || code == http.StatusAccepted || code == http.StatusNoContent) {
+			_ = c.setSmartCalibration(ip, username, password, channelID, "linedetection", ld.MinSize, ld.MaxSize)
 			return nil
 		}
 		if err != nil {
@@ -149,6 +154,7 @@ func (c *CameraClient) SetLineDetection(ip, username, password string, channelID
 
 		data2, code2, _, err2 := c.DoRequest(ip, username, password, "PUT", path, []byte(payload2), "application/xml")
 		if err2 == nil && (code2 == http.StatusOK || code2 == http.StatusAccepted || code2 == http.StatusNoContent) {
+			_ = c.setSmartCalibration(ip, username, password, channelID, "linedetection", ld.MinSize, ld.MaxSize)
 			return nil
 		}
 		if err2 != nil {
@@ -187,6 +193,11 @@ func (c *CameraClient) GetIntrusionDetection(ip, username, password string, chan
 		DetectionTarget: extractXMLTag(str, "detectionTarget"),
 		Coordinates:     coords,
 	}
+
+	minSize, maxSize, _ := c.getSmartCalibration(ip, username, password, channelID, "fielddetection")
+	fd.MinSize = minSize
+	fd.MaxSize = maxSize
+
 	return &fd, nil
 }
 
@@ -250,6 +261,7 @@ func (c *CameraClient) SetIntrusionDetection(ip, username, password string, chan
 
 	_, code, _, err := c.DoRequest(ip, username, password, "PUT", path, []byte(payload1), "application/xml")
 	if err == nil && (code == http.StatusOK || code == http.StatusAccepted || code == http.StatusNoContent) {
+		_ = c.setSmartCalibration(ip, username, password, channelID, "fielddetection", fd.MinSize, fd.MaxSize)
 		return nil
 	}
 
@@ -276,6 +288,7 @@ func (c *CameraClient) SetIntrusionDetection(ip, username, password string, chan
 	if code2 != http.StatusOK && code2 != http.StatusAccepted && code2 != http.StatusNoContent {
 		return fmt.Errorf("failed to set intrusion detection: status %d (resp: %s)", code2, string(data2))
 	}
+	_ = c.setSmartCalibration(ip, username, password, channelID, "fielddetection", fd.MinSize, fd.MaxSize)
 	return nil
 }
 
@@ -301,6 +314,11 @@ func (c *CameraClient) GetRegionEntrance(ip, username, password string, channelI
 		DetectionTarget: extractXMLTag(str, "detectionTarget"),
 		Coordinates:     coords,
 	}
+
+	minSize, maxSize, _ := c.getSmartCalibration(ip, username, password, channelID, "regionEntrance")
+	re.MinSize = minSize
+	re.MaxSize = maxSize
+
 	return &re, nil
 }
 
@@ -350,6 +368,7 @@ func (c *CameraClient) SetRegionEntrance(ip, username, password string, channelI
 	if code != http.StatusOK && code != http.StatusAccepted && code != http.StatusNoContent {
 		return fmt.Errorf("failed to set region entrance: status %d (resp: %s)", code, string(data))
 	}
+	_ = c.setSmartCalibration(ip, username, password, channelID, "regionEntrance", re.MinSize, re.MaxSize)
 	return nil
 }
 
@@ -375,6 +394,11 @@ func (c *CameraClient) GetRegionExiting(ip, username, password string, channelID
 		DetectionTarget: extractXMLTag(str, "detectionTarget"),
 		Coordinates:     coords,
 	}
+
+	minSize, maxSize, _ := c.getSmartCalibration(ip, username, password, channelID, "regionExiting")
+	re.MinSize = minSize
+	re.MaxSize = maxSize
+
 	return &re, nil
 }
 
@@ -424,6 +448,7 @@ func (c *CameraClient) SetRegionExiting(ip, username, password string, channelID
 	if code != http.StatusOK && code != http.StatusAccepted && code != http.StatusNoContent {
 		return fmt.Errorf("failed to set region exiting: status %d (resp: %s)", code, string(data))
 	}
+	_ = c.setSmartCalibration(ip, username, password, channelID, "regionExiting", re.MinSize, re.MaxSize)
 	return nil
 }
 
@@ -706,6 +731,11 @@ func (c *CameraClient) GetUnattendedBaggage(ip, username, password string, chann
 		TimeThreshold: parseXMLIntAny(str, 10, "timeThreshold", "threshold"),
 		Coordinates:   coords,
 	}
+
+	minSize, maxSize, _ := c.getSmartCalibration(ip, username, password, channelID, "unattendedBaggage")
+	ub.MinSize = minSize
+	ub.MaxSize = maxSize
+
 	return &ub, nil
 }
 
@@ -783,10 +813,12 @@ func (c *CameraClient) SetUnattendedBaggage(ip, username, password string, chann
 	for _, path := range paths {
 		_, code, _, err := c.DoRequest(ip, username, password, "PUT", path, []byte(payload1), "application/xml")
 		if err == nil && (code == http.StatusOK || code == http.StatusAccepted || code == http.StatusNoContent) {
+			_ = c.setSmartCalibration(ip, username, password, channelID, "unattendedBaggage", ub.MinSize, ub.MaxSize)
 			return nil
 		}
 		data2, code2, _, err2 := c.DoRequest(ip, username, password, "PUT", path, []byte(payload2), "application/xml")
 		if err2 == nil && (code2 == http.StatusOK || code2 == http.StatusAccepted || code2 == http.StatusNoContent) {
+			_ = c.setSmartCalibration(ip, username, password, channelID, "unattendedBaggage", ub.MinSize, ub.MaxSize)
 			return nil
 		}
 		if err2 != nil {
@@ -840,6 +872,11 @@ func (c *CameraClient) GetObjectRemoval(ip, username, password string, channelID
 		TimeThreshold: parseXMLIntAny(str, 10, "timeThreshold", "threshold"),
 		Coordinates:   coords,
 	}
+
+	minSize, maxSize, _ := c.getSmartCalibration(ip, username, password, channelID, "attendedBaggage")
+	or.MinSize = minSize
+	or.MaxSize = maxSize
+
 	return &or, nil
 }
 
@@ -942,11 +979,13 @@ func (c *CameraClient) SetObjectRemoval(ip, username, password string, channelID
 		}
 		_, code, _, err := c.DoRequest(ip, username, password, "PUT", path, []byte(targetPayload), "application/xml")
 		if err == nil && (code == http.StatusOK || code == http.StatusAccepted || code == http.StatusNoContent) {
+			_ = c.setSmartCalibration(ip, username, password, channelID, "attendedBaggage", or.MinSize, or.MaxSize)
 			return nil
 		}
 		if !strings.Contains(strings.ToLower(path), "attendedbaggage") {
 			data2, code2, _, err2 := c.DoRequest(ip, username, password, "PUT", path, []byte(payload2), "application/xml")
 			if err2 == nil && (code2 == http.StatusOK || code2 == http.StatusAccepted || code2 == http.StatusNoContent) {
+				_ = c.setSmartCalibration(ip, username, password, channelID, "attendedBaggage", or.MinSize, or.MaxSize)
 				return nil
 			}
 			if err2 != nil {
@@ -963,4 +1002,197 @@ func (c *CameraClient) SetObjectRemoval(ip, username, password string, channelID
 		}
 	}
 	return lastErr
+}
+
+// getRectBounds returns the bounding box [minX, maxX, minY, maxY] of 4 points in normalized space (0..1000).
+func getRectBounds(pts []Point) (minX, maxX, minY, maxY int) {
+	if len(pts) == 0 {
+		return 0, 0, 0, 0
+	}
+	minX, maxX = pts[0].X, pts[0].X
+	minY, maxY = pts[0].Y, pts[0].Y
+	for _, p := range pts[1:] {
+		if p.X < minX {
+			minX = p.X
+		}
+		if p.X > maxX {
+			maxX = p.X
+		}
+		if p.Y < minY {
+			minY = p.Y
+		}
+		if p.Y > maxY {
+			maxY = p.Y
+		}
+	}
+	if minX < 0 {
+		minX = 0
+	}
+	if maxX > 1000 {
+		maxX = 1000
+	}
+	if minY < 0 {
+		minY = 0
+	}
+	if maxY > 1000 {
+		maxY = 1000
+	}
+	return
+}
+
+// getSmartCalibration queries MinTargetSize and MaxTargetSize (90° target size filter) for a smart event.
+func (c *CameraClient) getSmartCalibration(ip, username, password string, channelID int, eventType string) ([]Point, []Point, error) {
+	if channelID <= 0 {
+		channelID = 1
+	}
+
+	paths := []string{
+		fmt.Sprintf("/ISAPI/Smart/channels/%d/calibrations/%s", channelID, eventType),
+		fmt.Sprintf("/ISAPI/Smart/channels/%d/calibrations", channelID),
+	}
+
+	var data []byte
+	var code int
+	for _, p := range paths {
+		var reqErr error
+		data, code, _, reqErr = c.DoRequest(ip, username, password, "GET", p, nil, "")
+		if reqErr == nil && code == http.StatusOK {
+			break
+		}
+	}
+
+	if code != http.StatusOK {
+		return nil, nil, fmt.Errorf("calibration query returned status %d", code)
+	}
+
+	str := string(data)
+	var minSize []Point
+	var maxSize []Point
+
+	// Extract MinTargetSize
+	if minBlock := extractXMLTag(str, "MinTargetSize"); minBlock != "" {
+		pts := extractCoordinates(minBlock)
+		if len(pts) >= 4 {
+			minX, maxX, minY, maxY := getRectBounds(pts)
+			if maxX-minX >= 10 && maxY-minY >= 10 {
+				minSize = []Point{
+					{X: minX, Y: minY},
+					{X: maxX, Y: minY},
+					{X: maxX, Y: maxY},
+					{X: minX, Y: maxY},
+				}
+			}
+		}
+	}
+
+	// Extract MaxTargetSize
+	if maxBlock := extractXMLTag(str, "MaxTargetSize"); maxBlock != "" {
+		pts := extractCoordinates(maxBlock)
+		if len(pts) >= 4 {
+			minX, maxX, minY, maxY := getRectBounds(pts)
+			// Only include if configured and not default full screen (0..1000)
+			if maxX-minX >= 10 && maxY-minY >= 10 && !(minX <= 5 && minY <= 5 && maxX >= 995 && maxY >= 995) {
+				maxSize = []Point{
+					{X: minX, Y: minY},
+					{X: maxX, Y: minY},
+					{X: maxX, Y: maxY},
+					{X: minX, Y: maxY},
+				}
+			}
+		}
+	}
+
+	return minSize, maxSize, nil
+}
+
+// setSmartCalibration updates the 90° rectangle MinTargetSize and MaxTargetSize for a smart event.
+func (c *CameraClient) setSmartCalibration(ip, username, password string, channelID int, eventType string, minSize []Point, maxSize []Point) error {
+	if channelID <= 0 {
+		channelID = 1
+	}
+
+	var minXML string
+	if len(minSize) >= 4 {
+		minX, maxX, minY, maxY := getRectBounds(minSize)
+		pYTop := 1000 - minY
+		pYBottom := 1000 - maxY
+		minXML = fmt.Sprintf(`      <MinTargetSize>
+        <RegionCoordinatesList>
+          <RegionCoordinates><positionX>%d</positionX><positionY>%d</positionY></RegionCoordinates>
+          <RegionCoordinates><positionX>%d</positionX><positionY>%d</positionY></RegionCoordinates>
+          <RegionCoordinates><positionX>%d</positionX><positionY>%d</positionY></RegionCoordinates>
+          <RegionCoordinates><positionX>%d</positionX><positionY>%d</positionY></RegionCoordinates>
+        </RegionCoordinatesList>
+      </MinTargetSize>`, minX, pYTop, maxX, pYTop, maxX, pYBottom, minX, pYBottom)
+	} else {
+		minXML = `      <MinTargetSize>
+        <RegionCoordinatesList>
+          <RegionCoordinates><positionX>0</positionX><positionY>0</positionY></RegionCoordinates>
+          <RegionCoordinates><positionX>0</positionX><positionY>0</positionY></RegionCoordinates>
+          <RegionCoordinates><positionX>0</positionX><positionY>0</positionY></RegionCoordinates>
+          <RegionCoordinates><positionX>0</positionX><positionY>0</positionY></RegionCoordinates>
+        </RegionCoordinatesList>
+      </MinTargetSize>`
+	}
+
+	var maxXML string
+	if len(maxSize) >= 4 {
+		minX, maxX, minY, maxY := getRectBounds(maxSize)
+		pYTop := 1000 - minY
+		pYBottom := 1000 - maxY
+		maxXML = fmt.Sprintf(`      <MaxTargetSize>
+        <RegionCoordinatesList>
+          <RegionCoordinates><positionX>%d</positionX><positionY>%d</positionY></RegionCoordinates>
+          <RegionCoordinates><positionX>%d</positionX><positionY>%d</positionY></RegionCoordinates>
+          <RegionCoordinates><positionX>%d</positionX><positionY>%d</positionY></RegionCoordinates>
+          <RegionCoordinates><positionX>%d</positionX><positionY>%d</positionY></RegionCoordinates>
+        </RegionCoordinatesList>
+      </MaxTargetSize>`, minX, pYTop, maxX, pYTop, maxX, pYBottom, minX, pYBottom)
+	} else {
+		maxXML = `      <MaxTargetSize>
+        <RegionCoordinatesList>
+          <RegionCoordinates><positionX>0</positionX><positionY>1000</positionY></RegionCoordinates>
+          <RegionCoordinates><positionX>1000</positionX><positionY>1000</positionY></RegionCoordinates>
+          <RegionCoordinates><positionX>1000</positionX><positionY>0</positionY></RegionCoordinates>
+          <RegionCoordinates><positionX>0</positionX><positionY>0</positionY></RegionCoordinates>
+        </RegionCoordinatesList>
+      </MaxTargetSize>`
+	}
+
+	payloadList := fmt.Sprintf(`<?xml version="1.0" encoding="UTF-8"?>
+<SmartCalibrationList version="2.0" xmlns="http://www.hikvision.com/ver20/XMLSchema">
+  <SmartCalibration version="2.0" xmlns="http://www.hikvision.com/ver20/XMLSchema">
+    <ID>%d</ID>
+    <FilterSize>
+%s
+%s
+      <mode>pixels</mode>
+    </FilterSize>
+  </SmartCalibration>
+</SmartCalibrationList>`, channelID, maxXML, minXML)
+
+	payloadSingle := fmt.Sprintf(`<?xml version="1.0" encoding="UTF-8"?>
+<SmartCalibration version="2.0" xmlns="http://www.hikvision.com/ver20/XMLSchema">
+  <ID>%d</ID>
+  <FilterSize>
+%s
+%s
+    <mode>pixels</mode>
+  </FilterSize>
+</SmartCalibration>`, channelID, maxXML, minXML)
+
+	paths := []string{
+		fmt.Sprintf("/ISAPI/Smart/channels/%d/calibrations/%s", channelID, eventType),
+		fmt.Sprintf("/ISAPI/Smart/channels/%d/calibrations", channelID),
+	}
+
+	for _, p := range paths {
+		for _, payload := range []string{payloadList, payloadSingle} {
+			_, code, _, err := c.DoRequest(ip, username, password, "PUT", p, []byte(payload), "application/xml")
+			if err == nil && (code == http.StatusOK || code == http.StatusAccepted || code == http.StatusNoContent) {
+				return nil
+			}
+		}
+	}
+	return nil
 }

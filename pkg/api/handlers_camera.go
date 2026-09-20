@@ -19,16 +19,28 @@ import (
 )
 
 type CameraHandler struct {
-	db        *db.DB
-	camClient *hikvision.CameraClient
-	crawler   *hikvision.Crawler
+	db           *db.DB
+	camClient    *hikvision.CameraClient
+	crawler      *hikvision.Crawler
+	alertManager *hikvision.AlertStreamManager
 }
 
-func NewCameraHandler(db *db.DB, camClient *hikvision.CameraClient, crawler *hikvision.Crawler) *CameraHandler {
+func NewCameraHandler(db *db.DB, camClient *hikvision.CameraClient, crawler *hikvision.Crawler, alertManager *hikvision.AlertStreamManager) *CameraHandler {
 	return &CameraHandler{
-		db:        db,
-		camClient: camClient,
-		crawler:   crawler,
+		db:           db,
+		camClient:    camClient,
+		crawler:      crawler,
+		alertManager: alertManager,
+	}
+}
+
+func (h *CameraHandler) syncAlerts() {
+	if h.alertManager == nil {
+		return
+	}
+	cams, err := h.db.ListCameras()
+	if err == nil {
+		h.alertManager.SyncCameras(cams)
 	}
 }
 
@@ -109,6 +121,7 @@ func (h *CameraHandler) Create(w http.ResponseWriter, r *http.Request) {
 		if cam.Enabled && cam.Path != "" {
 			_, _ = h.crawler.SyncCamera(*cam)
 		}
+		h.syncAlerts()
 	}()
 
 	writeJSON(w, http.StatusCreated, cam.ToPublic())
@@ -154,6 +167,7 @@ func (h *CameraHandler) Update(w http.ResponseWriter, r *http.Request) {
 		if cam.Enabled && cam.Path != "" {
 			_, _ = h.crawler.SyncCamera(*cam)
 		}
+		h.syncAlerts()
 	}()
 
 	writeJSON(w, http.StatusOK, cam.ToPublic())
@@ -171,6 +185,8 @@ func (h *CameraHandler) Delete(w http.ResponseWriter, r *http.Request) {
 		writeJSONError(w, "Failed to delete camera: "+err.Error(), http.StatusInternalServerError)
 		return
 	}
+
+	go h.syncAlerts()
 
 	writeJSON(w, http.StatusOK, map[string]bool{"success": true})
 }

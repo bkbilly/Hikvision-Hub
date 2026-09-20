@@ -40,7 +40,7 @@ func TestCameraDiscoverAndProbeEndpoints(t *testing.T) {
 	}
 
 	camClient := hikvision.NewCameraClient()
-	handler := NewCameraHandler(database, camClient, nil)
+	handler := NewCameraHandler(database, camClient, nil, nil)
 
 	// Test Discover endpoint
 	req := httptest.NewRequest("GET", "/api/cameras/discover", nil)

@@ -1,6 +1,7 @@
 import React from 'react';
 import { LogOut, Edit3 } from 'lucide-react';
 import type { RegionExiting, Point } from '../../../types';
+import { TargetSizeFilterSection } from './TargetSizeFilterSection';
 
 interface RegionExitingFormProps {
   regionExiting: RegionExiting;
@@ -8,6 +9,12 @@ interface RegionExitingFormProps {
   supportsTargetDetection: boolean;
   onStartDrawing: () => void;
   onSave: (e: React.FormEvent) => void;
+  onStartDrawMinSize: () => void;
+  onStartDrawMaxSize: () => void;
+  onClearMinSize: () => void;
+  onClearMaxSize: () => void;
+  onClearAllSizes: () => void;
+  drawingMode?: 'min' | 'max' | null;
 }
 
 export const RegionExitingForm: React.FC<RegionExitingFormProps> = ({
@@ -16,6 +23,12 @@ export const RegionExitingForm: React.FC<RegionExitingFormProps> = ({
   supportsTargetDetection,
   onStartDrawing,
   onSave,
+  onStartDrawMinSize,
+  onStartDrawMaxSize,
+  onClearMinSize,
+  onClearMaxSize,
+  onClearAllSizes,
+  drawingMode,
 }) => {
   const xPts: Point[] = regionExiting.coordinates && regionExiting.coordinates.length >= 4
     ? regionExiting.coordinates
@@ -109,6 +122,18 @@ export const RegionExitingForm: React.FC<RegionExitingFormProps> = ({
           <span className="text-slate-400">X: {xPts[3].x}, Y: {xPts[3].y}</span>
         </div>
       </div>
+
+      {/* Target Size Filter (Min / Max Size) */}
+      <TargetSizeFilterSection
+        minSize={regionExiting.min_size}
+        maxSize={regionExiting.max_size}
+        onStartDrawMinSize={onStartDrawMinSize}
+        onStartDrawMaxSize={onStartDrawMaxSize}
+        onClearMinSize={onClearMinSize}
+        onClearMaxSize={onClearMaxSize}
+        onClearAllSizes={onClearAllSizes}
+        drawingMode={drawingMode}
+      />
 
       <div className="flex justify-end pt-1">
         <button

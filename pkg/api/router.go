@@ -15,13 +15,14 @@ import (
 )
 
 type Config struct {
-	DB          *db.DB
-	Auth        *auth.AuthManager
-	Streamer    *hikvision.Streamer
-	CamClient   *hikvision.CameraClient
-	Crawler     *hikvision.Crawler
-	StaticFS    fs.FS
-	AppVersion  string
+	DB           *db.DB
+	Auth         *auth.AuthManager
+	Streamer     *hikvision.Streamer
+	CamClient    *hikvision.CameraClient
+	Crawler      *hikvision.Crawler
+	AlertManager *hikvision.AlertStreamManager
+	StaticFS     fs.FS
+	AppVersion   string
 }
 
 func SetupRouter(cfg Config) http.Handler {
@@ -44,11 +45,11 @@ func SetupRouter(cfg Config) http.Handler {
 	}))
 
 	authHandler := NewAuthHandler(cfg.DB, cfg.Auth)
-	camHandler := NewCameraHandler(cfg.DB, cfg.CamClient, cfg.Crawler)
-	eventHandler := NewEventHandler(cfg.DB, cfg.Crawler)
+	camHandler := NewCameraHandler(cfg.DB, cfg.CamClient, cfg.Crawler, cfg.AlertManager)
+	eventHandler := NewEventHandler(cfg.DB, cfg.Crawler, cfg.AlertManager)
 	videoHandler := NewVideoHandler(cfg.DB, cfg.Streamer)
 	bookmarkHandler := NewBookmarkHandler(cfg.DB)
-	wsHandler := NewWSHandler(cfg.DB, cfg.CamClient)
+	wsHandler := NewWSHandler(cfg.DB, cfg.CamClient, cfg.AlertManager)
 	sysHandler := NewSystemHandler(cfg.DB, cfg.Crawler, cfg.Streamer, cfg.AppVersion)
 	isapiHandler := NewISAPIHandler(cfg.DB, cfg.CamClient)
 
@@ -84,6 +85,7 @@ func SetupRouter(cfg Config) http.Handler {
 			r.Get("/cameras/{id}/snapshot", camHandler.Snapshot)
 			r.Get("/cameras/{id}/live", camHandler.StreamLive)
 			r.Get("/ws/live", wsHandler.StreamLiveWS)
+			r.Get("/ws/events", wsHandler.StreamEventsWS)
 			r.Get("/cameras/{id}/video", videoHandler.StreamClip)
 			r.Get("/cameras/{id}/thumbnail", videoHandler.StreamThumbnail)
 			r.Get("/cameras/{id}/picture", videoHandler.StreamPicture)
@@ -128,6 +130,7 @@ func SetupRouter(cfg Config) http.Handler {
 
 			// Event routes
 			r.Get("/events", eventHandler.GetEvents)
+			r.Get("/events/live", eventHandler.GetLiveEvents)
 			r.Get("/events/dates", eventHandler.GetRecordingDates)
 
 			// Bookmark routes

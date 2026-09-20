@@ -1,6 +1,7 @@
 import React from 'react';
 import { Shield, Edit3 } from 'lucide-react';
 import type { FieldDetection } from '../../../types';
+import { TargetSizeFilterSection } from './TargetSizeFilterSection';
 
 interface IntrusionDetectionFormProps {
   intrusion: FieldDetection;
@@ -8,6 +9,12 @@ interface IntrusionDetectionFormProps {
   supportsTargetDetection: boolean;
   onStartDrawing: () => void;
   onSave: (e: React.FormEvent) => void;
+  onStartDrawMinSize: () => void;
+  onStartDrawMaxSize: () => void;
+  onClearMinSize: () => void;
+  onClearMaxSize: () => void;
+  onClearAllSizes: () => void;
+  drawingMode?: 'min' | 'max' | null;
 }
 
 export const IntrusionDetectionForm: React.FC<IntrusionDetectionFormProps> = ({
@@ -16,6 +23,12 @@ export const IntrusionDetectionForm: React.FC<IntrusionDetectionFormProps> = ({
   supportsTargetDetection,
   onStartDrawing,
   onSave,
+  onStartDrawMinSize,
+  onStartDrawMaxSize,
+  onClearMinSize,
+  onClearMaxSize,
+  onClearAllSizes,
+  drawingMode,
 }) => {
   const iPts = intrusion.coordinates && intrusion.coordinates.length >= 4
     ? intrusion.coordinates
@@ -124,6 +137,18 @@ export const IntrusionDetectionForm: React.FC<IntrusionDetectionFormProps> = ({
           <span className="text-slate-400">X: {iPts[3].x}, Y: {iPts[3].y}</span>
         </div>
       </div>
+
+      {/* Target Size Filter (Min / Max Size) */}
+      <TargetSizeFilterSection
+        minSize={intrusion.min_size}
+        maxSize={intrusion.max_size}
+        onStartDrawMinSize={onStartDrawMinSize}
+        onStartDrawMaxSize={onStartDrawMaxSize}
+        onClearMinSize={onClearMinSize}
+        onClearMaxSize={onClearMaxSize}
+        onClearAllSizes={onClearAllSizes}
+        drawingMode={drawingMode}
+      />
 
       <div className="flex justify-end pt-1">
         <button

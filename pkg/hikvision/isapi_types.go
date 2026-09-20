@@ -168,6 +168,8 @@ type LineDetection struct {
 	Direction       string   `json:"direction"`    // "both", "leftToRight" (A->B), "rightToLeft" (B->A)
 	DetectionTarget string   `json:"detection_target,omitempty"` // "human", "vehicle", or empty
 	Coordinates     []Point  `json:"coordinates,omitempty"`
+	MinSize         []Point  `json:"min_size,omitempty"`
+	MaxSize         []Point  `json:"max_size,omitempty"`
 }
 
 // FieldDetection represents Intrusion / Region Entrance detection.
@@ -179,6 +181,8 @@ type FieldDetection struct {
 	TimeThreshold   int      `json:"time_threshold"` // 1-10 seconds
 	DetectionTarget string   `json:"detection_target,omitempty"` // "human", "vehicle", or empty
 	Coordinates     []Point  `json:"coordinates,omitempty"`
+	MinSize         []Point  `json:"min_size,omitempty"`
+	MaxSize         []Point  `json:"max_size,omitempty"`
 }
 
 // RegionEntrance represents Region Entrance smart detection.
@@ -189,6 +193,8 @@ type RegionEntrance struct {
 	Sensitivity     int      `json:"sensitivity"`
 	DetectionTarget string   `json:"detection_target,omitempty"`
 	Coordinates     []Point  `json:"coordinates,omitempty"`
+	MinSize         []Point  `json:"min_size,omitempty"`
+	MaxSize         []Point  `json:"max_size,omitempty"`
 }
 
 // RegionExiting represents Region Exiting smart detection.
@@ -199,6 +205,8 @@ type RegionExiting struct {
 	Sensitivity     int      `json:"sensitivity"`
 	DetectionTarget string   `json:"detection_target,omitempty"`
 	Coordinates     []Point  `json:"coordinates,omitempty"`
+	MinSize         []Point  `json:"min_size,omitempty"`
+	MaxSize         []Point  `json:"max_size,omitempty"`
 }
 
 // UnattendedBaggage represents Unattended Baggage / Left Luggage smart detection.
@@ -209,6 +217,8 @@ type UnattendedBaggage struct {
 	Sensitivity   int      `json:"sensitivity"`    // 1-100
 	TimeThreshold int      `json:"time_threshold"` // 5-100 seconds
 	Coordinates   []Point  `json:"coordinates,omitempty"`
+	MinSize       []Point  `json:"min_size,omitempty"`
+	MaxSize       []Point  `json:"max_size,omitempty"`
 }
 
 // ObjectRemoval represents Object Removal / Taken Away smart detection.
@@ -219,6 +229,8 @@ type ObjectRemoval struct {
 	Sensitivity   int      `json:"sensitivity"`    // 1-100
 	TimeThreshold int      `json:"time_threshold"` // 5-100 seconds
 	Coordinates   []Point  `json:"coordinates,omitempty"`
+	MinSize       []Point  `json:"min_size,omitempty"`
+	MaxSize       []Point  `json:"max_size,omitempty"`
 }
 
 // TamperDetection represents camera sabotage / video blinding detection with regional area.

@@ -1,6 +1,7 @@
 package hikvision
 
 import (
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -952,3 +953,152 @@ func TestISAPIPrivacyMask(t *testing.T) {
 		t.Fatalf("failed SetPrivacyMask: %v", setErr)
 	}
 }
+
+func TestISAPISmartCalibration(t *testing.T) {
+	calXML := `<?xml version="1.0" encoding="UTF-8"?>
+<SmartCalibrationList version="2.0" xmlns="http://www.hikvision.com/ver20/XMLSchema">
+<SmartCalibration version="2.0" xmlns="http://www.hikvision.com/ver20/XMLSchema">
+<ID>1</ID>
+<FilterSize>
+<MaxTargetSize>
+<RegionCoordinatesList>
+<RegionCoordinates><positionX>100</positionX><positionY>900</positionY></RegionCoordinates>
+<RegionCoordinates><positionX>900</positionX><positionY>900</positionY></RegionCoordinates>
+<RegionCoordinates><positionX>900</positionX><positionY>100</positionY></RegionCoordinates>
+<RegionCoordinates><positionX>100</positionX><positionY>100</positionY></RegionCoordinates>
+</RegionCoordinatesList>
+</MaxTargetSize>
+<MinTargetSize>
+<RegionCoordinatesList>
+<RegionCoordinates><positionX>200</positionX><positionY>400</positionY></RegionCoordinates>
+<RegionCoordinates><positionX>400</positionX><positionY>400</positionY></RegionCoordinates>
+<RegionCoordinates><positionX>400</positionX><positionY>200</positionY></RegionCoordinates>
+<RegionCoordinates><positionX>200</positionX><positionY>200</positionY></RegionCoordinates>
+</RegionCoordinatesList>
+</MinTargetSize>
+<mode>pixels</mode>
+</FilterSize>
+</SmartCalibration>
+</SmartCalibrationList>`
+
+	lineXML := `<?xml version="1.0" encoding="UTF-8"?>
+<LineDetection version="2.0">
+<id>1</id>
+<enabled>true</enabled>
+<LineItemList size="1">
+<LineItem>
+<id>1</id>
+<enabled>true</enabled>
+<sensitivityLevel>50</sensitivityLevel>
+<directionSensitivity>any</directionSensitivity>
+<CoordinatesList>
+<Coordinates><positionX>200</positionX><positionY>500</positionY></Coordinates>
+<Coordinates><positionX>800</positionX><positionY>500</positionY></Coordinates>
+</CoordinatesList>
+</LineItem>
+</LineItemList>
+</LineDetection>`
+
+	var lastCalibrationPutBody string
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/ISAPI/Smart/LineDetection/1":
+			if r.Method == "GET" {
+				w.Header().Set("Content-Type", "application/xml")
+				_, _ = w.Write([]byte(lineXML))
+			} else if r.Method == "PUT" {
+				w.WriteHeader(http.StatusOK)
+			}
+		case "/ISAPI/Smart/channels/1/calibrations/linedetection":
+			if r.Method == "GET" {
+				w.Header().Set("Content-Type", "application/xml")
+				_, _ = w.Write([]byte(calXML))
+			} else if r.Method == "PUT" {
+				b, _ := io.ReadAll(r.Body)
+				lastCalibrationPutBody = string(b)
+				w.WriteHeader(http.StatusOK)
+			}
+		default:
+			w.WriteHeader(http.StatusNotFound)
+		}
+	}))
+	defer ts.Close()
+
+	host := strings.TrimPrefix(ts.URL, "http://")
+	client := NewCameraClient()
+
+	ld, err := client.GetLineDetection(host, "admin", "12345", 1)
+	if err != nil {
+		t.Fatalf("GetLineDetection failed: %v", err)
+	}
+
+	if len(ld.MinSize) != 4 {
+		t.Fatalf("expected 4 MinSize points, got %d", len(ld.MinSize))
+	}
+	if ld.MinSize[0].X != 200 || ld.MinSize[1].X != 400 {
+		t.Errorf("unexpected MinSize X coords: %+v", ld.MinSize)
+	}
+
+	if len(ld.MaxSize) != 4 {
+		t.Fatalf("expected 4 MaxSize points, got %d", len(ld.MaxSize))
+	}
+	if ld.MaxSize[0].X != 100 || ld.MaxSize[1].X != 900 {
+		t.Errorf("unexpected MaxSize X coords: %+v", ld.MaxSize)
+	}
+
+	// Test SetLineDetection preserving/updating calibration
+	ld.MinSize = []Point{
+		{X: 150, Y: 150},
+		{X: 350, Y: 150},
+		{X: 350, Y: 350},
+		{X: 150, Y: 350},
+	}
+	if err := client.SetLineDetection(host, "admin", "12345", 1, *ld); err != nil {
+		t.Fatalf("SetLineDetection failed: %v", err)
+	}
+
+	if !strings.Contains(lastCalibrationPutBody, "<positionX>150</positionX>") ||
+		!strings.Contains(lastCalibrationPutBody, "<positionX>350</positionX>") {
+		t.Errorf("expected calibration PUT to contain updated coordinates, got: %s", lastCalibrationPutBody)
+	}
+}
+
+func TestISAPISmartCalibrationLive(t *testing.T) {
+	client := NewCameraClient()
+	ld, err := client.GetLineDetection("192.168.2.176", "admin", "loco8Way", 1)
+	if err != nil {
+		t.Skipf("Live camera not reachable: %v", err)
+		return
+	}
+	t.Logf("Live camera 192.168.2.176 line crossing before: enabled=%t, minSize=%+v, maxSize=%+v", ld.Enabled, ld.MinSize, ld.MaxSize)
+
+	origMin := ld.MinSize
+	origMax := ld.MaxSize
+
+	// Set test min size and max size
+	testMin := []Point{{X: 100, Y: 100}, {X: 250, Y: 100}, {X: 250, Y: 250}, {X: 100, Y: 250}}
+	testMax := []Point{{X: 50, Y: 50}, {X: 800, Y: 50}, {X: 800, Y: 800}, {X: 50, Y: 800}}
+	ld.MinSize = testMin
+	ld.MaxSize = testMax
+
+	if err := client.SetLineDetection("192.168.2.176", "admin", "loco8Way", 1, *ld); err != nil {
+		t.Fatalf("SetLineDetection with calibration failed: %v", err)
+	}
+
+	// Verify read-back
+	updated, err := client.GetLineDetection("192.168.2.176", "admin", "loco8Way", 1)
+	if err != nil {
+		t.Fatalf("GetLineDetection readback failed: %v", err)
+	}
+	t.Logf("Live camera after setting calibration: minSize=%+v, maxSize=%+v", updated.MinSize, updated.MaxSize)
+
+	if len(updated.MinSize) != 4 || len(updated.MaxSize) != 4 {
+		t.Errorf("expected 4 points each, got min=%v, max=%v", updated.MinSize, updated.MaxSize)
+	}
+
+	// Restore original state
+	ld.MinSize = origMin
+	ld.MaxSize = origMax
+	_ = client.SetLineDetection("192.168.2.176", "admin", "loco8Way", 1, *ld)
+}
+

@@ -1,6 +1,7 @@
 import React from 'react';
 import { Layers, Edit3 } from 'lucide-react';
 import type { LineDetection } from '../../../types';
+import { TargetSizeFilterSection } from './TargetSizeFilterSection';
 
 interface LineCrossingFormProps {
   lineDetection: LineDetection;
@@ -8,6 +9,12 @@ interface LineCrossingFormProps {
   supportsTargetDetection: boolean;
   onStartDrawing: () => void;
   onSave: (e: React.FormEvent) => void;
+  onStartDrawMinSize: () => void;
+  onStartDrawMaxSize: () => void;
+  onClearMinSize: () => void;
+  onClearMaxSize: () => void;
+  onClearAllSizes: () => void;
+  drawingMode?: 'min' | 'max' | null;
 }
 
 export const LineCrossingForm: React.FC<LineCrossingFormProps> = ({
@@ -16,6 +23,12 @@ export const LineCrossingForm: React.FC<LineCrossingFormProps> = ({
   supportsTargetDetection,
   onStartDrawing,
   onSave,
+  onStartDrawMinSize,
+  onStartDrawMaxSize,
+  onClearMinSize,
+  onClearMaxSize,
+  onClearAllSizes,
+  drawingMode,
 }) => {
   const pt1 = lineDetection.coordinates?.[0] || { x: 150, y: 500 };
   const pt2 = lineDetection.coordinates?.[1] || { x: 850, y: 500 };
@@ -108,6 +121,18 @@ export const LineCrossingForm: React.FC<LineCrossingFormProps> = ({
           <span className="text-slate-400">X: {pt2.x}, Y: {pt2.y}</span>
         </div>
       </div>
+
+      {/* Target Size Filter (Min / Max Size) */}
+      <TargetSizeFilterSection
+        minSize={lineDetection.min_size}
+        maxSize={lineDetection.max_size}
+        onStartDrawMinSize={onStartDrawMinSize}
+        onStartDrawMaxSize={onStartDrawMaxSize}
+        onClearMinSize={onClearMinSize}
+        onClearMaxSize={onClearMaxSize}
+        onClearAllSizes={onClearAllSizes}
+        drawingMode={drawingMode}
+      />
 
       <div className="flex justify-end pt-1">
         <button

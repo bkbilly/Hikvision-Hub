@@ -1,12 +1,19 @@
 import React from 'react';
 import { Package, Edit3 } from 'lucide-react';
 import type { ObjectRemovalDetection, Point } from '../../../types';
+import { TargetSizeFilterSection } from './TargetSizeFilterSection';
 
 interface ObjectRemovalFormProps {
   objectRemoval: ObjectRemovalDetection;
   setObjectRemoval: React.Dispatch<React.SetStateAction<ObjectRemovalDetection | null>>;
   onStartDrawing: () => void;
   onSave: (e: React.FormEvent) => void;
+  onStartDrawMinSize: () => void;
+  onStartDrawMaxSize: () => void;
+  onClearMinSize: () => void;
+  onClearMaxSize: () => void;
+  onClearAllSizes: () => void;
+  drawingMode?: 'min' | 'max' | null;
 }
 
 export const ObjectRemovalForm: React.FC<ObjectRemovalFormProps> = ({
@@ -14,6 +21,12 @@ export const ObjectRemovalForm: React.FC<ObjectRemovalFormProps> = ({
   setObjectRemoval,
   onStartDrawing,
   onSave,
+  onStartDrawMinSize,
+  onStartDrawMaxSize,
+  onClearMinSize,
+  onClearMaxSize,
+  onClearAllSizes,
+  drawingMode,
 }) => {
   const rPts: Point[] = objectRemoval.coordinates && objectRemoval.coordinates.length >= 4
     ? objectRemoval.coordinates
@@ -111,6 +124,18 @@ export const ObjectRemovalForm: React.FC<ObjectRemovalFormProps> = ({
           <span className="text-slate-400">X: {rPts[3].x}, Y: {rPts[3].y}</span>
         </div>
       </div>
+
+      {/* Target Size Filter (Min / Max Size) */}
+      <TargetSizeFilterSection
+        minSize={objectRemoval.min_size}
+        maxSize={objectRemoval.max_size}
+        onStartDrawMinSize={onStartDrawMinSize}
+        onStartDrawMaxSize={onStartDrawMaxSize}
+        onClearMinSize={onClearMinSize}
+        onClearMaxSize={onClearMaxSize}
+        onClearAllSizes={onClearAllSizes}
+        drawingMode={drawingMode}
+      />
 
       <div className="flex justify-end pt-1">
         <button

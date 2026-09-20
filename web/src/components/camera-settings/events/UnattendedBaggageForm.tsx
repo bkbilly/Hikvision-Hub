@@ -1,12 +1,19 @@
 import React from 'react';
 import { Briefcase, Edit3 } from 'lucide-react';
 import type { UnattendedBaggageDetection, Point } from '../../../types';
+import { TargetSizeFilterSection } from './TargetSizeFilterSection';
 
 interface UnattendedBaggageFormProps {
   unattended: UnattendedBaggageDetection;
   setUnattended: React.Dispatch<React.SetStateAction<UnattendedBaggageDetection | null>>;
   onStartDrawing: () => void;
   onSave: (e: React.FormEvent) => void;
+  onStartDrawMinSize: () => void;
+  onStartDrawMaxSize: () => void;
+  onClearMinSize: () => void;
+  onClearMaxSize: () => void;
+  onClearAllSizes: () => void;
+  drawingMode?: 'min' | 'max' | null;
 }
 
 export const UnattendedBaggageForm: React.FC<UnattendedBaggageFormProps> = ({
@@ -14,6 +21,12 @@ export const UnattendedBaggageForm: React.FC<UnattendedBaggageFormProps> = ({
   setUnattended,
   onStartDrawing,
   onSave,
+  onStartDrawMinSize,
+  onStartDrawMaxSize,
+  onClearMinSize,
+  onClearMaxSize,
+  onClearAllSizes,
+  drawingMode,
 }) => {
   const uPts: Point[] = unattended.coordinates && unattended.coordinates.length >= 4
     ? unattended.coordinates
@@ -111,6 +124,18 @@ export const UnattendedBaggageForm: React.FC<UnattendedBaggageFormProps> = ({
           <span className="text-slate-400">X: {uPts[3].x}, Y: {uPts[3].y}</span>
         </div>
       </div>
+
+      {/* Target Size Filter (Min / Max Size) */}
+      <TargetSizeFilterSection
+        minSize={unattended.min_size}
+        maxSize={unattended.max_size}
+        onStartDrawMinSize={onStartDrawMinSize}
+        onStartDrawMaxSize={onStartDrawMaxSize}
+        onClearMinSize={onClearMinSize}
+        onClearMaxSize={onClearMaxSize}
+        onClearAllSizes={onClearAllSizes}
+        drawingMode={drawingMode}
+      />
 
       <div className="flex justify-end pt-1">
         <button
