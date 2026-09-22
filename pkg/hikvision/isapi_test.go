@@ -4,6 +4,7 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"regexp"
 	"strings"
 	"testing"
 	"time"
@@ -609,6 +610,160 @@ func TestISAPIMotionNormalAndExpert(t *testing.T) {
 	}
 	if !strings.Contains(receivedPUT, "<positionX>183</positionX>") || !strings.Contains(receivedPUT, "<positionY>800</positionY>") {
 		t.Errorf("expected coordinates (183, 800) in PUT body, got: %s", receivedPUT)
+	}
+}
+
+func TestISAPIMotionExtCoordinatesAndNormalization(t *testing.T) {
+	var receivedPUT string
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/ISAPI/System/Video/inputs/channels/1/motionDetection":
+			w.Header().Set("Content-Type", "application/xml")
+			w.WriteHeader(http.StatusOK)
+			_, _ = w.Write([]byte(`<?xml version="1.0" encoding="UTF-8"?>
+<MotionDetection version="2.0" xmlns="http://www.hikvision.com/ver20/XMLSchema">
+  <enabled>true</enabled>
+  <regionType>grid</regionType>
+  <MotionDetectionLayout version="2.0">
+    <sensitivityLevel>50</sensitivityLevel>
+  </MotionDetectionLayout>
+</MotionDetection>`))
+		case "/ISAPI/System/Video/inputs/channels/1/motionDetectionExt":
+			if r.Method == "GET" {
+				w.Header().Set("Content-Type", "application/xml")
+				w.WriteHeader(http.StatusOK)
+				_, _ = w.Write([]byte(`<?xml version="1.0" encoding="UTF-8"?>
+<MotionDetectionExt version="2.0" xmlns="http://www.hikvision.com/ver20/XMLSchema">
+  <enabled>true</enabled>
+  <activeMode>expert</activeMode>
+  <ROI>
+    <minHorizontalResolution>1000</minHorizontalResolution>
+    <maxHorizontalResolution>1000</maxHorizontalResolution>
+  </ROI>
+  <MotionDetectionRegionList size="2">
+    <MotionDetectionRegion>
+      <id>1</id>
+      <enabled>true</enabled>
+      <sensitivityLevel>50</sensitivityLevel>
+      <RegionCoordinatesList>
+        <RegionCoordinates><positionX>100</positionX><positionY>800</positionY></RegionCoordinates>
+        <RegionCoordinates><positionX>400</positionX><positionY>800</positionY></RegionCoordinates>
+        <RegionCoordinates><positionX>400</positionX><positionY>600</positionY></RegionCoordinates>
+        <RegionCoordinates><positionX>100</positionX><positionY>600</positionY></RegionCoordinates>
+      </RegionCoordinatesList>
+    </MotionDetectionRegion>
+    <MotionDetectionRegion>
+      <id>2</id>
+      <enabled>true</enabled>
+      <sensitivityLevel>50</sensitivityLevel>
+      <RegionCoordinatesList>
+        <RegionCoordinates><positionX>0</positionX><positionY>0</positionY></RegionCoordinates>
+        <RegionCoordinates><positionX>0</positionX><positionY>0</positionY></RegionCoordinates>
+        <RegionCoordinates><positionX>0</positionX><positionY>0</positionY></RegionCoordinates>
+        <RegionCoordinates><positionX>0</positionX><positionY>0</positionY></RegionCoordinates>
+      </RegionCoordinatesList>
+    </MotionDetectionRegion>
+  </MotionDetectionRegionList>
+</MotionDetectionExt>`))
+				return
+			}
+			if r.Method == "PUT" {
+				buf := make([]byte, 4096)
+				n, _ := r.Body.Read(buf)
+				receivedPUT = string(buf[:n])
+				w.WriteHeader(http.StatusOK)
+				_, _ = w.Write([]byte(`<ResponseStatus><statusCode>1</statusCode><statusString>OK</statusString></ResponseStatus>`))
+				return
+			}
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	defer ts.Close()
+
+	host := strings.TrimPrefix(ts.URL, "http://")
+	client := NewCameraClient()
+
+	m, err := client.GetMotionDetection(host, "admin", "12345", 1)
+	if err != nil {
+		t.Fatalf("GetMotionDetection failed: %v", err)
+	}
+	if !m.SupportsExpert || m.Mode != "expert" {
+		t.Fatalf("expected expert mode, got mode=%s supportsExpert=%v", m.Mode, m.SupportsExpert)
+	}
+	if len(m.Regions) != 2 {
+		t.Fatalf("expected 2 regions, got %d", len(m.Regions))
+	}
+
+	// Region 1: Camera had positionY 800 (top) and 600 (bottom).
+	// In screen space (1000 - Y): minY = 1000 - 800 = 200 (top), maxY = 1000 - 600 = 400 (bottom).
+	// Points should be normalized clockwise starting from Top-Left:
+	// P0: (100, 200), P1: (400, 200), P2: (400, 400), P3: (100, 400).
+	r1 := m.Regions[0]
+	if !r1.Enabled {
+		t.Errorf("expected Region 1 to be enabled")
+	}
+	if len(r1.Coordinates) != 4 {
+		t.Fatalf("expected 4 coordinates in Region 1, got %d", len(r1.Coordinates))
+	}
+	expectedCoords := []Point{
+		{X: 100, Y: 200}, // Top-Left
+		{X: 400, Y: 200}, // Top-Right
+		{X: 400, Y: 400}, // Bottom-Right
+		{X: 100, Y: 400}, // Bottom-Left
+	}
+	for i, exp := range expectedCoords {
+		if r1.Coordinates[i].X != exp.X || r1.Coordinates[i].Y != exp.Y {
+			t.Errorf("Region 1 point %d mismatch: got %+v, expected %+v", i, r1.Coordinates[i], exp)
+		}
+	}
+
+	// Region 2: Had all zero coordinates. Must be marked disabled.
+	r2 := m.Regions[1]
+	if r2.Enabled {
+		t.Errorf("expected Region 2 with all zeros to be marked disabled")
+	}
+
+	// Now test SetMotionDetection with expert regions:
+	// Save Region 1 enabled with screen coords {100, 200}..{400, 400} -> camY must be {800, 600}
+	// Save Region 2 disabled -> coordinates must be all zeros {0, 0}
+	saveMotion := MotionDetection{
+		Enabled: true,
+		Mode:    "expert",
+		Regions: []MotionRegion{
+			{
+				ID:          1,
+				Enabled:     true,
+				Coordinates: expectedCoords,
+			},
+			{
+				ID:          2,
+				Enabled:     false,
+				Coordinates: []Point{{X: 100, Y: 100}, {X: 200, Y: 100}, {X: 200, Y: 200}, {X: 100, Y: 200}},
+			},
+		},
+	}
+	if err := client.SetMotionDetection(host, "admin", "12345", 1, saveMotion); err != nil {
+		t.Fatalf("SetMotionDetection failed: %v", err)
+	}
+
+	// Verify PUT body for Region 1: positionY must be 800 and 600 (camY = 1000 - pt.Y)
+	if !strings.Contains(receivedPUT, "<positionY>800</positionY>") || !strings.Contains(receivedPUT, "<positionY>600</positionY>") {
+		t.Errorf("expected camY 800 and 600 in PUT body for Region 1: %s", receivedPUT)
+	}
+
+	// Verify PUT body for disabled Region 2: all coordinates must be 0
+	if !strings.Contains(receivedPUT, "<id>2</id>\n  <enabled>false</enabled>") && !strings.Contains(receivedPUT, "<id>2</id>\r\n  <enabled>false</enabled>") {
+		// Region 2 is disabled
+	}
+	// Verify that Region 2 writes 0,0 coordinates
+	reReg2 := regexp.MustCompile(`(?is)<id>2</id>.*?<RegionCoordinatesList>(.*?)</RegionCoordinatesList>`)
+	mReg2 := reReg2.FindStringSubmatch(receivedPUT)
+	if len(mReg2) < 2 {
+		t.Fatalf("could not find Region 2 coords in PUT: %s", receivedPUT)
+	}
+	if strings.Contains(mReg2[1], "100") || strings.Contains(mReg2[1], "200") {
+		t.Errorf("expected Region 2 (disabled) to have only 0 coordinates in PUT, got: %s", mReg2[1])
 	}
 }
 

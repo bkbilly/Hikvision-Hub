@@ -135,9 +135,11 @@ type MotionRegion struct {
 	ID               int     `json:"id"`
 	Enabled          bool    `json:"enabled"`
 	Sensitivity      int     `json:"sensitivity"`
-	DaySensitivity   int     `json:"day_sensitivity,omitempty"`
-	NightSensitivity int     `json:"night_sensitivity,omitempty"`
-	Percentage       int     `json:"percentage,omitempty"` // Object size threshold percentage (0-100)
+	DaySensitivity   int     `json:"day_sensitivity,omitempty"`   // 1-100 (day sensitivity)
+	NightSensitivity int     `json:"night_sensitivity,omitempty"` // 1-100 (night sensitivity)
+	Percentage       int     `json:"percentage,omitempty"`        // Object size threshold percentage (0-100)
+	DayPercentage    int     `json:"day_percentage,omitempty"`    // Day object size percentage (0-100)
+	NightPercentage  int     `json:"night_percentage,omitempty"`  // Night object size percentage (0-100)
 	Coordinates      []Point `json:"coordinates,omitempty"`
 }
 
@@ -145,18 +147,22 @@ type MotionRegion struct {
 type MotionDetection struct {
 	XMLName            xml.Name       `xml:"MotionDetection" json:"-"`
 	Enabled            bool           `xml:"enabled" json:"enabled"`
-	Sensitivity        int            `json:"sensitivity"` // 1-100 (master/normal sensitivity)
-	Mode               string         `json:"mode,omitempty"` // "normal" or "expert"
-	GridMap            string         `json:"grid_map,omitempty"` // Hex string representing active grid blocks in normal mode
+	Sensitivity        int            `json:"sensitivity"`                       // 1-100 (master/normal sensitivity)
+	Mode               string         `json:"mode,omitempty"`                      // "normal" or "expert"
+	GridMap            string         `json:"grid_map,omitempty"`                  // Hex string representing active grid blocks in normal mode
 	RowGranularity     int            `json:"row_granularity,omitempty"`
 	ColumnGranularity  int            `json:"column_granularity,omitempty"`
-	DaySensitivity     int            `json:"day_sensitivity,omitempty"` // 1-100 (expert mode default)
-	NightSensitivity   int            `json:"night_sensitivity,omitempty"` // 1-100 (expert mode default)
-	DayNightSwitchType string         `json:"day_night_switch_type,omitempty"` // "auto", "schedule", "close"
-	EnableHighlight    bool           `json:"enable_highlight,omitempty"` // Dynamic motion highlight
-	TargetType         string         `json:"target_type,omitempty"` // Target detection: "human", "vehicle"
-	Coordinates        []Point        `json:"coordinates,omitempty"` // Normal mode polygon coordinates (3+ points)
-	Regions            []MotionRegion `json:"regions,omitempty"` // Expert mode multi-areas (up to 8)
+	DaySensitivity     int            `json:"day_sensitivity,omitempty"`           // 1-100 (expert mode default)
+	NightSensitivity   int            `json:"night_sensitivity,omitempty"`         // 1-100 (expert mode default)
+	DayNightSwitchType string         `json:"day_night_switch_type,omitempty"`     // "off", "auto", "schedule"
+	ScheduleStartTime  string         `json:"schedule_start_time,omitempty"`       // "HH:MM:SS" for scheduled image settings
+	ScheduleEndTime    string         `json:"schedule_end_time,omitempty"`         // "HH:MM:SS" for scheduled image settings
+	EnableHighlight    bool           `json:"enable_highlight,omitempty"`          // Dynamic motion highlight
+	TargetType         string         `json:"target_type,omitempty"`               // Target detection: "human", "vehicle"
+	Coordinates        []Point        `json:"coordinates,omitempty"`               // Normal mode polygon coordinates (3+ points)
+	Regions            []MotionRegion `json:"regions,omitempty"`                   // Expert mode multi-areas (up to 8)
+	SupportsExpert     bool           `json:"supports_expert"`                     // Camera supports motionDetectionExt expert mode
+	SupportsPercentage bool           `json:"supports_percentage"`                 // Camera supports object size percentage
 }
 
 // LineDetection represents Line Crossing VCA detection.

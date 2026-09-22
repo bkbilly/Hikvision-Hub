@@ -221,6 +221,8 @@ export interface MotionRegion {
   day_sensitivity?: number;
   night_sensitivity?: number;
   percentage?: number; // object size / trigger threshold percentage (0-100)
+  day_percentage?: number;
+  night_percentage?: number;
   coordinates?: { x: number; y: number }[];
 }
 
@@ -233,11 +235,15 @@ export interface MotionDetection {
   column_granularity?: number;
   day_sensitivity?: number;
   night_sensitivity?: number;
-  day_night_switch_type?: string;
+  day_night_switch_type?: 'off' | 'auto' | 'schedule' | string;
+  schedule_start_time?: string;
+  schedule_end_time?: string;
   enable_highlight?: boolean;
   target_type?: string; // Target detection: "human", "vehicle", "all"
   coordinates?: { x: number; y: number }[]; // Normal mode polygon box (3+ points)
   regions?: MotionRegion[];
+  supports_expert?: boolean;
+  supports_percentage?: boolean;
 }
 
 export interface LineDetection {

@@ -232,9 +232,14 @@ func extractCoordinates(xmlContent string) []Point {
 			} else if normY > 1000 {
 				normY = 1000
 			}
-			normY = 1000 - normY
 			points = append(points, Point{X: normX, Y: normY})
 		}
+	}
+	if len(points) == 0 || isAllZeroPoints(points) {
+		return points
+	}
+	for i := range points {
+		points[i].Y = 1000 - points[i].Y
 	}
 	return points
 }

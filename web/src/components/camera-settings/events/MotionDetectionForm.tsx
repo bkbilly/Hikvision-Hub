@@ -223,12 +223,68 @@ export const MotionDetectionForm: React.FC<MotionDetectionFormProps> = ({
         ) : (
           /* EXPERT MODE: Multi-Area Selector & Per-Area Configuration */
           <div className="space-y-4 pt-1">
-            {/* Area 1..8 Tabs */}
+            {/* 1. Scheduled Image Settings / Day-Night Switch Mode (Above Options) */}
+            <div className="p-3.5 rounded-xl bg-slate-900/90 border border-slate-800 space-y-3">
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+                <div>
+                  <label className="block text-xs font-semibold text-white">
+                    Scheduled Image Settings (Day / Night Switch)
+                  </label>
+                  <p className="text-[11px] text-slate-400">
+                    Control sensitivity and target size thresholds globally or based on day/night mode.
+                  </p>
+                </div>
+                <div className="w-full sm:w-64 shrink-0">
+                  <select
+                    value={motion.day_night_switch_type || 'off'}
+                    onChange={(e) => setMotion({ ...motion, day_night_switch_type: e.target.value })}
+                    className="w-full bg-slate-950 border border-slate-700/80 rounded-lg px-3 py-2 text-xs sm:text-sm text-white focus:outline-none focus:border-emerald-500 cursor-pointer"
+                  >
+                    <option value="off">Off (Global Settings)</option>
+                    <option value="auto">Auto Switch (Ambient Light Sensor)</option>
+                    <option value="schedule">Scheduled</option>
+                  </select>
+                </div>
+              </div>
+
+              {/* Start and End Time: ONLY visible when 'schedule' is selected */}
+              {motion.day_night_switch_type === 'schedule' && (
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-2.5 border-t border-slate-800">
+                  <div className="space-y-1">
+                    <label className="block text-xs font-medium text-slate-300 flex items-center gap-1.5">
+                      <Sun className="w-3.5 h-3.5 text-amber-400" /> Start Time (Day Mode)
+                    </label>
+                    <input
+                      type="time"
+                      step="1"
+                      value={motion.schedule_start_time || '06:00:00'}
+                      onChange={(e) => setMotion({ ...motion, schedule_start_time: e.target.value })}
+                      className="w-full bg-slate-950 border border-slate-700/80 rounded-lg px-3 py-1.5 text-xs sm:text-sm text-white font-mono focus:outline-none focus:border-emerald-500"
+                    />
+                  </div>
+                  <div className="space-y-1">
+                    <label className="block text-xs font-medium text-slate-300 flex items-center gap-1.5">
+                      <Clock className="w-3.5 h-3.5 text-blue-400" /> End Time (Night Mode)
+                    </label>
+                    <input
+                      type="time"
+                      step="1"
+                      value={motion.schedule_end_time || '18:00:00'}
+                      onChange={(e) => setMotion({ ...motion, schedule_end_time: e.target.value })}
+                      className="w-full bg-slate-950 border border-slate-700/80 rounded-lg px-3 py-1.5 text-xs sm:text-sm text-white font-mono focus:outline-none focus:border-emerald-500"
+                    />
+                  </div>
+                </div>
+              )}
+            </div>
+
+            {/* 2. Area 1..8 Tabs */}
             <div>
               <label className="block text-xs font-medium text-slate-300 mb-1.5">Select Detection Area</label>
               <div className="grid grid-cols-4 sm:grid-cols-8 gap-1.5">
                 {expertRegions.map((reg, idx) => {
                   const isSelected = activeExpertAreaIndex === idx;
+                  const isEnabled = Boolean(reg.enabled);
                   return (
                     <button
                       key={reg.id || idx + 1}
@@ -242,7 +298,7 @@ export const MotionDetectionForm: React.FC<MotionDetectionFormProps> = ({
                     >
                       <span
                         className={`w-2 h-2 rounded-full shrink-0 ${
-                          reg.enabled ? (isSelected ? 'bg-white' : 'bg-emerald-400') : 'bg-slate-600'
+                          isEnabled ? (isSelected ? 'bg-white' : 'bg-emerald-400') : 'bg-slate-600'
                         }`}
                       />
                       <span>Area {idx + 1}</span>
@@ -252,15 +308,15 @@ export const MotionDetectionForm: React.FC<MotionDetectionFormProps> = ({
               </div>
             </div>
 
-            {/* Active Area Controls */}
-            <div className="p-3.5 rounded-xl bg-slate-900/90 border border-slate-800 space-y-3">
+            {/* 3. Active Area Controls & Configuration Options */}
+            <div className="p-3.5 rounded-xl bg-slate-900/90 border border-slate-800 space-y-3.5">
               <div className="flex items-center justify-between pb-2 border-b border-slate-800">
                 <div className="flex items-center gap-2">
                   <span className="text-xs font-bold text-white">Area {activeExpertAreaIndex + 1} Settings</span>
                   <span className={`text-[10px] px-2 py-0.5 rounded-full font-semibold uppercase ${
-                    (activeExpertAreaIndex === 0 || currentArea.enabled) ? 'bg-emerald-500/10 text-emerald-400 border border-emerald-500/30' : 'bg-slate-800 text-slate-400'
+                    currentArea.enabled ? 'bg-emerald-500/10 text-emerald-400 border border-emerald-500/30' : 'bg-slate-800 text-slate-400'
                   }`}>
-                    {activeExpertAreaIndex === 0 ? 'Always Active (Area 1)' : (currentArea.enabled ? 'Active' : 'Disabled')}
+                    {currentArea.enabled ? 'Active' : 'Disabled'}
                   </span>
                 </div>
                 <div className="flex items-center gap-3">
@@ -271,14 +327,10 @@ export const MotionDetectionForm: React.FC<MotionDetectionFormProps> = ({
                   >
                     <Edit3 className="w-3 h-3" /> Draw 90° Rectangle
                   </button>
-                  <label
-                    className={`relative inline-flex items-center ${activeExpertAreaIndex === 0 ? 'cursor-not-allowed opacity-75' : 'cursor-pointer'}`}
-                    title={activeExpertAreaIndex === 0 ? 'Area 1 is always enabled in Expert Mode' : undefined}
-                  >
+                  <label className="relative inline-flex items-center cursor-pointer">
                     <input
                       type="checkbox"
-                      checked={activeExpertAreaIndex === 0 ? true : Boolean(currentArea.enabled)}
-                      disabled={activeExpertAreaIndex === 0}
+                      checked={Boolean(currentArea.enabled)}
                       onChange={(e) => updateActiveExpertRegion({ enabled: e.target.checked })}
                       className="sr-only peer"
                     />
@@ -287,134 +339,177 @@ export const MotionDetectionForm: React.FC<MotionDetectionFormProps> = ({
                 </div>
               </div>
 
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-1">
-                <div className="space-y-1">
-                  <div className="flex justify-between text-xs">
-                    <span className="text-slate-300 font-medium">Area Sensitivity</span>
-                    <span className="text-emerald-400 font-mono font-bold">{currentArea.sensitivity}</span>
+              {/* Dynamic Sensitivity and Percentage Options based on Day/Night Switch Mode */}
+              {(!motion.day_night_switch_type || motion.day_night_switch_type === 'off') ? (
+                /* GLOBAL SETTING (When Scheduled Image Settings is OFF) */
+                <div className={`grid gap-3 pt-1 ${motion.supports_percentage ? 'grid-cols-1 sm:grid-cols-2' : 'grid-cols-1'}`}>
+                  <div className="space-y-1">
+                    <div className="flex justify-between text-xs">
+                      <span className="text-slate-300 font-medium">Area Sensitivity</span>
+                      <span className="text-emerald-400 font-mono font-bold">{currentArea.sensitivity}</span>
+                    </div>
+                    <input
+                      type="range"
+                      min="1"
+                      max="100"
+                      value={currentArea.sensitivity}
+                      onChange={(e) => updateActiveExpertRegion({ sensitivity: parseInt(e.target.value) || 50 })}
+                      className="w-full accent-emerald-500 bg-slate-800 rounded-lg h-2 cursor-pointer"
+                    />
                   </div>
-                  <input
-                    type="range"
-                    min="1"
-                    max="100"
-                    value={currentArea.sensitivity}
-                    onChange={(e) => updateActiveExpertRegion({ sensitivity: parseInt(e.target.value) || 50 })}
-                    className="w-full accent-emerald-500 bg-slate-800 rounded-lg h-2 cursor-pointer"
-                  />
-                </div>
 
-                <div className="space-y-1">
-                  <div className="flex justify-between text-xs">
-                    <span className="text-slate-300 font-medium">Target Size Threshold (Object Ratio)</span>
-                    <span className="text-emerald-400 font-mono font-bold">{currentArea.percentage ?? 20}%</span>
+                  {motion.supports_percentage && (
+                    <div className="space-y-1">
+                      <div className="flex justify-between text-xs">
+                        <span className="text-slate-300 font-medium">Target Size (Percentage %)</span>
+                        <span className="text-emerald-400 font-mono font-bold">{currentArea.percentage ?? 20}%</span>
+                      </div>
+                      <input
+                        type="range"
+                        min="0"
+                        max="100"
+                        value={currentArea.percentage ?? 20}
+                        onChange={(e) => updateActiveExpertRegion({ percentage: parseInt(e.target.value) || 0 })}
+                        className="w-full accent-emerald-500 bg-slate-800 rounded-lg h-2 cursor-pointer"
+                      />
+                    </div>
+                  )}
+                </div>
+              ) : (
+                /* DAY & NIGHT SETTINGS (When Scheduled Image Settings is AUTO SWITCH or SCHEDULED) */
+                <div className="space-y-3 pt-1">
+                  {/* Day Settings Card */}
+                  <div className="p-3 rounded-lg bg-slate-950/60 border border-slate-800 space-y-2.5">
+                    <div className="flex items-center gap-1.5 text-xs font-semibold text-amber-400">
+                      <Sun className="w-3.5 h-3.5" /> Day Options
+                    </div>
+                    <div className={`grid gap-3 ${motion.supports_percentage ? 'grid-cols-1 sm:grid-cols-2' : 'grid-cols-1'}`}>
+                      <div className="space-y-1">
+                        <div className="flex justify-between text-xs">
+                          <span className="text-slate-300 font-medium">Day Sensitivity</span>
+                          <span className="text-amber-400 font-mono font-bold">
+                            {currentArea.day_sensitivity ?? currentArea.sensitivity ?? 50}
+                          </span>
+                        </div>
+                        <input
+                          type="range"
+                          min="1"
+                          max="100"
+                          value={currentArea.day_sensitivity ?? currentArea.sensitivity ?? 50}
+                          onChange={(e) => updateActiveExpertRegion({ day_sensitivity: parseInt(e.target.value) || 50 })}
+                          className="w-full accent-amber-500 bg-slate-800 rounded-lg h-2 cursor-pointer"
+                        />
+                      </div>
+
+                      {motion.supports_percentage && (
+                        <div className="space-y-1">
+                          <div className="flex justify-between text-xs">
+                            <span className="text-slate-300 font-medium">Day Target Size (%)</span>
+                            <span className="text-amber-400 font-mono font-bold">
+                              {currentArea.day_percentage ?? currentArea.percentage ?? 20}%
+                            </span>
+                          </div>
+                          <input
+                            type="range"
+                            min="0"
+                            max="100"
+                            value={currentArea.day_percentage ?? currentArea.percentage ?? 20}
+                            onChange={(e) => updateActiveExpertRegion({ day_percentage: parseInt(e.target.value) || 0 })}
+                            className="w-full accent-amber-500 bg-slate-800 rounded-lg h-2 cursor-pointer"
+                          />
+                        </div>
+                      )}
+                    </div>
                   </div>
-                  <input
-                    type="range"
-                    min="0"
-                    max="100"
-                    value={currentArea.percentage ?? 20}
-                    onChange={(e) => updateActiveExpertRegion({ percentage: parseInt(e.target.value) || 0 })}
-                    className="w-full accent-emerald-500 bg-slate-800 rounded-lg h-2 cursor-pointer"
-                  />
-                </div>
-              </div>
 
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-1">
-                <div className="space-y-1">
-                  <div className="flex justify-between text-xs">
-                    <span className="text-slate-300 font-medium flex items-center gap-1">
-                      <Sun className="w-3.5 h-3.5 text-amber-400" /> Day Sensitivity
-                    </span>
-                    <span className="text-amber-400 font-mono font-bold">
-                      {currentArea.day_sensitivity ?? currentArea.sensitivity ?? 60}
-                    </span>
+                  {/* Night Settings Card */}
+                  <div className="p-3 rounded-lg bg-slate-950/60 border border-slate-800 space-y-2.5">
+                    <div className="flex items-center gap-1.5 text-xs font-semibold text-blue-400">
+                      <Clock className="w-3.5 h-3.5" /> Night Options
+                    </div>
+                    <div className={`grid gap-3 ${motion.supports_percentage ? 'grid-cols-1 sm:grid-cols-2' : 'grid-cols-1'}`}>
+                      <div className="space-y-1">
+                        <div className="flex justify-between text-xs">
+                          <span className="text-slate-300 font-medium">Night Sensitivity</span>
+                          <span className="text-blue-400 font-mono font-bold">
+                            {currentArea.night_sensitivity ?? currentArea.sensitivity ?? 50}
+                          </span>
+                        </div>
+                        <input
+                          type="range"
+                          min="1"
+                          max="100"
+                          value={currentArea.night_sensitivity ?? currentArea.sensitivity ?? 50}
+                          onChange={(e) => updateActiveExpertRegion({ night_sensitivity: parseInt(e.target.value) || 50 })}
+                          className="w-full accent-blue-500 bg-slate-800 rounded-lg h-2 cursor-pointer"
+                        />
+                      </div>
+
+                      {motion.supports_percentage && (
+                        <div className="space-y-1">
+                          <div className="flex justify-between text-xs">
+                            <span className="text-slate-300 font-medium">Night Target Size (%)</span>
+                            <span className="text-blue-400 font-mono font-bold">
+                              {currentArea.night_percentage ?? currentArea.percentage ?? 20}%
+                            </span>
+                          </div>
+                          <input
+                            type="range"
+                            min="0"
+                            max="100"
+                            value={currentArea.night_percentage ?? currentArea.percentage ?? 20}
+                            onChange={(e) => updateActiveExpertRegion({ night_percentage: parseInt(e.target.value) || 0 })}
+                            className="w-full accent-blue-500 bg-slate-800 rounded-lg h-2 cursor-pointer"
+                          />
+                        </div>
+                      )}
+                    </div>
                   </div>
-                  <input
-                    type="range"
-                    min="1"
-                    max="100"
-                    value={currentArea.day_sensitivity ?? currentArea.sensitivity ?? 60}
-                    onChange={(e) => updateActiveExpertRegion({ day_sensitivity: parseInt(e.target.value) || 60 })}
-                    className="w-full accent-amber-500 bg-slate-800 rounded-lg h-2 cursor-pointer"
-                  />
                 </div>
+              )}
 
-                <div className="space-y-1">
-                  <div className="flex justify-between text-xs">
-                    <span className="text-slate-300 font-medium flex items-center gap-1">
-                      <Clock className="w-3.5 h-3.5 text-blue-400" /> Night Sensitivity
-                    </span>
-                    <span className="text-blue-400 font-mono font-bold">
-                      {currentArea.night_sensitivity ?? currentArea.sensitivity ?? 40}
-                    </span>
-                  </div>
-                  <input
-                    type="range"
-                    min="1"
-                    max="100"
-                    value={currentArea.night_sensitivity ?? currentArea.sensitivity ?? 40}
-                    onChange={(e) => updateActiveExpertRegion({ night_sensitivity: parseInt(e.target.value) || 40 })}
-                    className="w-full accent-blue-500 bg-slate-800 rounded-lg h-2 cursor-pointer"
-                  />
-                </div>
-              </div>
-
-              <div className={`grid gap-3 pt-1 ${supportsTargetDetection ? 'grid-cols-1 sm:grid-cols-2' : 'grid-cols-1'}`}>
-                <div>
-                  <label className="block text-xs font-medium text-slate-300 mb-1">Day / Night Switch Mode</label>
+              {/* Target Detection Dropdown (if supported) */}
+              {supportsTargetDetection && (
+                <div className="pt-1">
+                  <label className="block text-xs font-medium text-slate-300 mb-1">Target Detection</label>
                   <select
-                    value={motion.day_night_switch_type || 'auto'}
-                    onChange={(e) => setMotion({ ...motion, day_night_switch_type: e.target.value })}
-                    className="w-full bg-slate-900 border border-slate-700/80 rounded-lg px-3 py-2 text-xs sm:text-sm text-white focus:outline-none focus:border-emerald-500"
+                    value={motion.target_type || 'all'}
+                    onChange={(e) => setMotion({ ...motion, target_type: e.target.value })}
+                    className="w-full bg-slate-950 border border-slate-700/80 rounded-lg px-3 py-2 text-xs sm:text-sm text-white focus:outline-none focus:border-emerald-500 cursor-pointer"
                   >
-                    <option value="auto">Auto Switch (Based on ambient lighting)</option>
-                    <option value="schedule">Schedule Mode</option>
-                    <option value="close">Disabled (Fixed Sensitivity)</option>
+                    <option value="all">All Targets (Human & Vehicle)</option>
+                    <option value="human">Human Only</option>
+                    <option value="vehicle">Vehicle Only</option>
                   </select>
                 </div>
-
-                {supportsTargetDetection && (
-                  <div>
-                    <label className="block text-xs font-medium text-slate-300 mb-1">Target Detection</label>
-                    <select
-                      value={motion.target_type || 'all'}
-                      onChange={(e) => setMotion({ ...motion, target_type: e.target.value })}
-                      className="w-full bg-slate-900 border border-slate-700/80 rounded-lg px-3 py-2 text-xs sm:text-sm text-white focus:outline-none focus:border-emerald-500"
-                    >
-                      <option value="all">All Targets (Human & Vehicle)</option>
-                      <option value="human">Human Only</option>
-                      <option value="vehicle">Vehicle Only</option>
-                    </select>
-                  </div>
-                )}
-              </div>
+              )}
 
               {/* Active Area 4 Corner Coordinates Display */}
               {(() => {
                 const activePts = currentArea.coordinates && currentArea.coordinates.length >= 4
                   ? currentArea.coordinates
                   : [
-                      { x: 150 + (activeExpertAreaIndex % 4) * 80, y: 150 + (activeExpertAreaIndex % 4) * 80 },
-                      { x: 650 + (activeExpertAreaIndex % 4) * 80, y: 150 + (activeExpertAreaIndex % 4) * 80 },
-                      { x: 650 + (activeExpertAreaIndex % 4) * 80, y: 650 + (activeExpertAreaIndex % 4) * 80 },
-                      { x: 150 + (activeExpertAreaIndex % 4) * 80, y: 650 + (activeExpertAreaIndex % 4) * 80 },
+                      { x: 150 + (activeExpertAreaIndex % 4) * 60, y: 150 + (activeExpertAreaIndex % 4) * 60 },
+                      { x: 650 + (activeExpertAreaIndex % 4) * 60, y: 150 + (activeExpertAreaIndex % 4) * 60 },
+                      { x: 650 + (activeExpertAreaIndex % 4) * 60, y: 650 + (activeExpertAreaIndex % 4) * 60 },
+                      { x: 150 + (activeExpertAreaIndex % 4) * 60, y: 650 + (activeExpertAreaIndex % 4) * 60 },
                     ];
                 return (
                   <div className="p-2.5 rounded-lg bg-slate-950/60 border border-slate-800/80 grid grid-cols-2 sm:grid-cols-4 gap-2 text-xs font-mono">
                     <div>
-                      <span className="text-emerald-400 font-bold block">Corner 1</span>
+                      <span className="text-emerald-400 font-bold block">Corner 1 (TL)</span>
                       <span className="text-slate-400">X: {activePts[0].x}, Y: {activePts[0].y}</span>
                     </div>
                     <div>
-                      <span className="text-emerald-400 font-bold block">Corner 2</span>
+                      <span className="text-emerald-400 font-bold block">Corner 2 (TR)</span>
                       <span className="text-slate-400">X: {activePts[1].x}, Y: {activePts[1].y}</span>
                     </div>
                     <div>
-                      <span className="text-emerald-400 font-bold block">Corner 3</span>
+                      <span className="text-emerald-400 font-bold block">Corner 3 (BR)</span>
                       <span className="text-slate-400">X: {activePts[2].x}, Y: {activePts[2].y}</span>
                     </div>
                     <div>
-                      <span className="text-emerald-400 font-bold block">Corner 4</span>
+                      <span className="text-emerald-400 font-bold block">Corner 4 (BL)</span>
                       <span className="text-slate-400">X: {activePts[3].x}, Y: {activePts[3].y}</span>
                     </div>
                   </div>

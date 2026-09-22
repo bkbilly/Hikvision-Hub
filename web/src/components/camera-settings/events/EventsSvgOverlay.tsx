@@ -11,6 +11,7 @@ import type {
   RegionExiting,
   Point,
 } from '../../../types';
+import { isZeroArea } from './EventsTab';
 
 interface EventsSvgOverlayProps {
   svgRef: React.RefObject<SVGSVGElement | null>;
@@ -50,6 +51,7 @@ interface EventsSvgOverlayProps {
   currentMaxSize?: Point[];
   onStartDragSizeCorner?: (type: 'min' | 'max', cornerIndex: number, e: React.PointerEvent) => void;
   onStartDragSizeBody?: (type: 'min' | 'max', e: React.PointerEvent) => void;
+  onStartDragExpertBody?: (e: React.PointerEvent) => void;
 }
 
 export const EventsSvgOverlay: React.FC<EventsSvgOverlayProps> = ({
@@ -90,6 +92,7 @@ export const EventsSvgOverlay: React.FC<EventsSvgOverlayProps> = ({
   currentMaxSize,
   onStartDragSizeCorner,
   onStartDragSizeBody,
+  onStartDragExpertBody,
 }) => {
   // Line points & perpendicular arrows
   const pt1 = lineDetection?.coordinates?.[0] || { x: 200, y: 500 };
@@ -200,7 +203,8 @@ export const EventsSvgOverlay: React.FC<EventsSvgOverlayProps> = ({
     enabled: boolean,
     strokeColor: string,
     fillColor: string,
-    textColor: string = '#ffffff'
+    textColor: string = '#ffffff',
+    onBodyPointerDown?: (e: React.PointerEvent) => void
   ) => {
     if (drawIntrusionStep !== null) {
       return (
@@ -267,7 +271,8 @@ export const EventsSvgOverlay: React.FC<EventsSvgOverlayProps> = ({
             stroke={strokeColor}
             strokeWidth="8"
             strokeLinejoin="round"
-            className="pointer-events-none"
+            onPointerDown={onBodyPointerDown}
+            className={onBodyPointerDown ? "cursor-move" : "pointer-events-none"}
           />
           {pts.map((p, idx) => (
             <g
@@ -770,15 +775,8 @@ export const EventsSvgOverlay: React.FC<EventsSvgOverlayProps> = ({
         <>
           {/* Inactive but enabled background areas */}
           {getExpertRegions().map((reg, idx) => {
-            if (idx === activeExpertAreaIndex || !reg.enabled || !motion.enabled) return null;
-            const pts = reg.coordinates && reg.coordinates.length >= 4
-              ? reg.coordinates
-              : [
-                  { x: 150 + (idx % 4) * 80, y: 150 + (idx % 4) * 80 },
-                  { x: 650 + (idx % 4) * 80, y: 150 + (idx % 4) * 80 },
-                  { x: 650 + (idx % 4) * 80, y: 650 + (idx % 4) * 80 },
-                  { x: 150 + (idx % 4) * 80, y: 650 + (idx % 4) * 80 },
-                ];
+            if (idx === activeExpertAreaIndex || !reg.enabled || !motion.enabled || isZeroArea(reg.coordinates)) return null;
+            const pts = reg.coordinates!;
             const areaMidX = Math.round((pts[0].x + pts[1].x + pts[2].x + pts[3].x) / 4);
             const areaMidY = Math.round((pts[0].y + pts[1].y + pts[2].y + pts[3].y) / 4);
             return (
@@ -814,13 +812,14 @@ export const EventsSvgOverlay: React.FC<EventsSvgOverlayProps> = ({
             />
           )}
 
-          {/* Active selected area with 4 handles (Area 1 is always enabled) */}
+          {/* Active selected area with 4 handles */}
           {!drawStep && render4PointRegionSVG(
             getActiveRegionPoints(),
-            Boolean((activeExpertAreaIndex === 0 || motion.regions?.[activeExpertAreaIndex]?.enabled) && motion.enabled),
+            Boolean(getExpertRegions()[activeExpertAreaIndex]?.enabled && motion.enabled),
             '#10b981',
             'rgba(16, 185, 129, 0.28)',
-            '#000000'
+            '#000000',
+            onStartDragExpertBody
           )}
         </>
       )}

@@ -36,6 +36,29 @@ import { ObjectRemovalForm } from './ObjectRemovalForm';
 import { RegionEntranceForm } from './RegionEntranceForm';
 import { RegionExitingForm } from './RegionExitingForm';
 
+export const isZeroArea = (pts?: Point[]): boolean => {
+  if (!pts || pts.length < 4) return true;
+  const minX = Math.min(...pts.map((p) => p.x));
+  const maxX = Math.max(...pts.map((p) => p.x));
+  const minY = Math.min(...pts.map((p) => p.y));
+  const maxY = Math.max(...pts.map((p) => p.y));
+  return (maxX - minX) < 15 || (maxY - minY) < 15;
+};
+
+export const normalizeRectPoints = (pts?: Point[]): Point[] => {
+  if (!pts || pts.length < 4) return pts || [];
+  const minX = Math.min(...pts.slice(0, 4).map((p) => p.x));
+  const maxX = Math.max(...pts.slice(0, 4).map((p) => p.x));
+  const minY = Math.min(...pts.slice(0, 4).map((p) => p.y));
+  const maxY = Math.max(...pts.slice(0, 4).map((p) => p.y));
+  return [
+    { x: minX, y: minY },
+    { x: maxX, y: minY },
+    { x: maxX, y: maxY },
+    { x: minX, y: maxY },
+  ];
+};
+
 interface EventsTabProps {
   camera: Camera;
   capabilities: CameraCapabilities | null;
@@ -86,6 +109,11 @@ export const EventsTab: React.FC<EventsTabProps> = ({
   const [drawHoverPt, setDrawHoverPt] = useState<Point | null>(null);
   const [draggingPoint, setDraggingPoint] = useState<string | null>(null);
 
+  // Expert Mode Rectangle Body Dragging
+  const [isDraggingExpertBody, setIsDraggingExpertBody] = useState(false);
+  const [dragExpertBodyStart, setDragExpertBodyStart] = useState<Point | null>(null);
+  const [dragExpertBodyOrig, setDragExpertBodyOrig] = useState<Point[] | null>(null);
+
   // Normal mode motion polygon drawing state
   const [isDrawingNormalMotion, setIsDrawingNormalMotion] = useState(false);
   const [normalMotionDrawPoints, setNormalMotionDrawPoints] = useState<Point[]>([]);
@@ -116,6 +144,9 @@ export const EventsTab: React.FC<EventsTabProps> = ({
     setNormalMotionDrawPoints([]);
     setDrawHoverPt(null);
     setDraggingPoint(null);
+    setIsDraggingExpertBody(false);
+    setDragExpertBodyStart(null);
+    setDragExpertBodyOrig(null);
     setDrawSizeMode(null);
     setDrawSizeCorner1(null);
     setDragSizeAnchorPos(null);
@@ -127,27 +158,44 @@ export const EventsTab: React.FC<EventsTabProps> = ({
       api.getCameraMotion(camera.id)
         .then((res) => {
           if (!isMountedRef.current) return;
-          let regions = res.regions;
-          if (!regions || regions.length === 0) {
-            regions = [];
-            for (let i = 1; i <= 8; i++) {
-              const offset = ((i - 1) % 4) * 80;
-              regions.push({
-                id: i,
-                enabled: i === 1,
-                sensitivity: res.sensitivity || 50,
-                day_sensitivity: res.day_sensitivity || res.sensitivity || 60,
-                night_sensitivity: res.night_sensitivity || res.sensitivity || 40,
-                percentage: 20,
+          let regions = res.regions ? [...res.regions] : [];
+          while (regions.length < 8) {
+            const idx = regions.length;
+            const offset = (idx % 4) * 60;
+            regions.push({
+              id: idx + 1,
+              enabled: false,
+              sensitivity: res.sensitivity || 50,
+              day_sensitivity: res.day_sensitivity || res.sensitivity || 60,
+              night_sensitivity: res.night_sensitivity || res.sensitivity || 40,
+              percentage: 20,
+              coordinates: [
+                { x: 150 + offset, y: 150 + offset },
+                { x: 650 + offset, y: 150 + offset },
+                { x: 650 + offset, y: 650 + offset },
+                { x: 150 + offset, y: 650 + offset },
+              ],
+            });
+          }
+          regions = regions.map((reg, idx) => {
+            if (isZeroArea(reg.coordinates)) {
+              const offset = (idx % 4) * 60;
+              return {
+                ...reg,
+                enabled: false,
                 coordinates: [
                   { x: 150 + offset, y: 150 + offset },
                   { x: 650 + offset, y: 150 + offset },
                   { x: 650 + offset, y: 650 + offset },
                   { x: 150 + offset, y: 650 + offset },
                 ],
-              });
+              };
             }
-          }
+            return {
+              ...reg,
+              coordinates: normalizeRectPoints(reg.coordinates),
+            };
+          });
           setMotion({ ...res, regions });
         })
         .catch((err) => console.warn('motion error', err)),
@@ -414,10 +462,10 @@ export const EventsTab: React.FC<EventsTabProps> = ({
     const regions = motion?.regions ? [...motion.regions] : [];
     while (regions.length < 8) {
       const idx = regions.length;
-      const offset = (idx % 4) * 80;
+      const offset = (idx % 4) * 60;
       regions.push({
         id: idx + 1,
-        enabled: idx === 0,
+        enabled: false,
         sensitivity: motion?.sensitivity || 50,
         day_sensitivity: motion?.day_sensitivity || motion?.sensitivity || 60,
         night_sensitivity: motion?.night_sensitivity || motion?.sensitivity || 40,
@@ -430,7 +478,25 @@ export const EventsTab: React.FC<EventsTabProps> = ({
         ],
       });
     }
-    return regions;
+    return regions.map((reg, idx) => {
+      if (isZeroArea(reg.coordinates)) {
+        const offset = (idx % 4) * 60;
+        return {
+          ...reg,
+          enabled: false,
+          coordinates: [
+            { x: 150 + offset, y: 150 + offset },
+            { x: 650 + offset, y: 150 + offset },
+            { x: 650 + offset, y: 650 + offset },
+            { x: 150 + offset, y: 650 + offset },
+          ],
+        };
+      }
+      return {
+        ...reg,
+        coordinates: normalizeRectPoints(reg.coordinates),
+      };
+    });
   };
 
   const updateActiveExpertRegion = (partial: Partial<MotionRegion>) => {
@@ -475,6 +541,9 @@ export const EventsTab: React.FC<EventsTabProps> = ({
     setIsDraggingSizeBody(null);
     setDragSizeBodyStart(null);
     setDragSizeBodyOrig(null);
+    setIsDraggingExpertBody(false);
+    setDragExpertBodyStart(null);
+    setDragExpertBodyOrig(null);
     if (!drawStep && !drawIntrusionStep && !drawSizeMode) {
       setDraggingPoint(null);
     }
@@ -526,13 +595,14 @@ export const EventsTab: React.FC<EventsTabProps> = ({
     if (activeSmartEvent === 'motion' && motion?.mode === 'expert') {
       const regions = getExpertRegions();
       const r = regions[activeExpertAreaIndex];
-      return r?.coordinates && r.coordinates.length >= 4
-        ? r.coordinates
+      const offset = (activeExpertAreaIndex % 4) * 60;
+      return r?.coordinates && !isZeroArea(r.coordinates)
+        ? normalizeRectPoints(r.coordinates)
         : [
-            { x: 150, y: 150 },
-            { x: 650, y: 150 },
-            { x: 650, y: 650 },
-            { x: 150, y: 650 },
+            { x: 150 + offset, y: 150 + offset },
+            { x: 650 + offset, y: 150 + offset },
+            { x: 650 + offset, y: 650 + offset },
+            { x: 150 + offset, y: 650 + offset },
           ];
     }
     if (activeSmartEvent === 'motion' && (motion?.mode || 'normal') === 'normal') {
@@ -836,6 +906,19 @@ export const EventsTab: React.FC<EventsTabProps> = ({
     setDraggingPoint(`${type}-body`);
   };
 
+  const handleStartDragExpertBody = (e: React.PointerEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    const pos = getNormalizedCoordinates(e);
+    if (!pos) return;
+    const currentPts = getActiveRegionPoints();
+    if (!currentPts || currentPts.length < 4) return;
+    setIsDraggingExpertBody(true);
+    setDragExpertBodyStart(pos);
+    setDragExpertBodyOrig(currentPts);
+    setDraggingPoint('expert-body');
+  };
+
   const handleCancelDrawing = () => {
     setDrawStep(null);
     setDrawIntrusionStep(null);
@@ -844,6 +927,9 @@ export const EventsTab: React.FC<EventsTabProps> = ({
     setNormalMotionDrawPoints([]);
     setDrawHoverPt(null);
     setDraggingPoint(null);
+    setIsDraggingExpertBody(false);
+    setDragExpertBodyStart(null);
+    setDragExpertBodyOrig(null);
     setDrawSizeMode(null);
     setDrawSizeCorner1(null);
     setDragSizeAnchorPos(null);
@@ -1143,6 +1229,35 @@ export const EventsTab: React.FC<EventsTabProps> = ({
       return;
     }
 
+    // Expert Mode Body Translation (moving whole 90-degree rectangle)
+    if (isDraggingExpertBody && dragExpertBodyStart && dragExpertBodyOrig && dragExpertBodyOrig.length === 4) {
+      let dx = pos.x - dragExpertBodyStart.x;
+      let dy = pos.y - dragExpertBodyStart.y;
+
+      const minX = Math.min(...dragExpertBodyOrig.map((p) => p.x));
+      const maxX = Math.max(...dragExpertBodyOrig.map((p) => p.x));
+      const minY = Math.min(...dragExpertBodyOrig.map((p) => p.y));
+      const maxY = Math.max(...dragExpertBodyOrig.map((p) => p.y));
+
+      if (minX + dx < 0) dx = -minX;
+      if (maxX + dx > 1000) dx = 1000 - maxX;
+      if (minY + dy < 0) dy = -minY;
+      if (maxY + dy > 1000) dy = 1000 - maxY;
+
+      const translatedCoords: Point[] = dragExpertBodyOrig.map((pt) => ({
+        x: pt.x + dx,
+        y: pt.y + dy,
+      }));
+
+      const currentRegions = getExpertRegions();
+      currentRegions[activeExpertAreaIndex] = {
+        ...currentRegions[activeExpertAreaIndex],
+        coordinates: translatedCoords,
+      };
+      setMotion({ ...motion!, regions: currentRegions });
+      return;
+    }
+
     if (activeSmartEvent === 'line' && lineDetection) {
       const coords = [...(lineDetection.coordinates || [{ x: 200, y: 500 }, { x: 800, y: 500 }])];
       if (draggingPoint === '1') {
@@ -1154,14 +1269,15 @@ export const EventsTab: React.FC<EventsTabProps> = ({
     } else if (activeSmartEvent === 'motion' && motion?.mode === 'expert') {
       // Expert Mode: Dragging any corner preserves 90-degree rectangle geometry!
       const currentRegions = getExpertRegions();
+      const offset = (activeExpertAreaIndex % 4) * 60;
       const oldCoords =
-        currentRegions[activeExpertAreaIndex]?.coordinates && currentRegions[activeExpertAreaIndex].coordinates.length >= 4
+        currentRegions[activeExpertAreaIndex]?.coordinates && !isZeroArea(currentRegions[activeExpertAreaIndex].coordinates)
           ? [...currentRegions[activeExpertAreaIndex].coordinates]
           : [
-              { x: 150, y: 150 },
-              { x: 650, y: 150 },
-              { x: 650, y: 650 },
-              { x: 150, y: 650 },
+              { x: 150 + offset, y: 150 + offset },
+              { x: 650 + offset, y: 150 + offset },
+              { x: 650 + offset, y: 650 + offset },
+              { x: 150 + offset, y: 650 + offset },
             ];
       const newCoords = [...oldCoords];
       const idx = parseInt(draggingPoint, 10) - 1;
@@ -1332,7 +1448,7 @@ export const EventsTab: React.FC<EventsTabProps> = ({
     switch (activeSmartEvent) {
       case 'motion':
         if (!motion?.enabled) return true;
-        if (motion.mode === 'expert' && activeExpertAreaIndex > 0) {
+        if (motion.mode === 'expert') {
           const regions = getExpertRegions();
           return !regions[activeExpertAreaIndex]?.enabled;
         }
@@ -1360,7 +1476,7 @@ export const EventsTab: React.FC<EventsTabProps> = ({
     switch (activeSmartEvent) {
       case 'motion':
         if (!motion?.enabled) return 'Motion Detection';
-        if (motion.mode === 'expert' && activeExpertAreaIndex > 0) {
+        if (motion.mode === 'expert') {
           return `Motion Area ${activeExpertAreaIndex + 1}`;
         }
         return 'Motion Detection';
@@ -1392,7 +1508,45 @@ export const EventsTab: React.FC<EventsTabProps> = ({
       setSaveStatus({ success: true, message: res.message });
       const updated = await api.getCameraMotion(camera.id);
       if (updated) {
-        setMotion(updated);
+        let regions = updated.regions ? [...updated.regions] : [];
+        while (regions.length < 8) {
+          const idx = regions.length;
+          const offset = (idx % 4) * 60;
+          regions.push({
+            id: idx + 1,
+            enabled: false,
+            sensitivity: updated.sensitivity || 50,
+            day_sensitivity: updated.day_sensitivity || updated.sensitivity || 60,
+            night_sensitivity: updated.night_sensitivity || updated.sensitivity || 40,
+            percentage: 20,
+            coordinates: [
+              { x: 150 + offset, y: 150 + offset },
+              { x: 650 + offset, y: 150 + offset },
+              { x: 650 + offset, y: 650 + offset },
+              { x: 150 + offset, y: 650 + offset },
+            ],
+          });
+        }
+        regions = regions.map((reg, idx) => {
+          if (isZeroArea(reg.coordinates)) {
+            const offset = (idx % 4) * 60;
+            return {
+              ...reg,
+              enabled: false,
+              coordinates: [
+                { x: 150 + offset, y: 150 + offset },
+                { x: 650 + offset, y: 150 + offset },
+                { x: 650 + offset, y: 650 + offset },
+                { x: 150 + offset, y: 650 + offset },
+              ],
+            };
+          }
+          return {
+            ...reg,
+            coordinates: normalizeRectPoints(reg.coordinates),
+          };
+        });
+        setMotion({ ...updated, regions });
       }
     } catch (err: any) {
       setSaveStatus({ success: false, message: err.message || 'Failed to save motion detection' });
@@ -1427,34 +1581,8 @@ export const EventsTab: React.FC<EventsTabProps> = ({
     try {
       const res = await api.setCameraTamper(camera.id, tamper);
       setSaveStatus({ success: true, message: res.message });
-      const updated = await api.getCameraTamper(camera.id);
-      if (updated) {
-        setTamper(updated);
-      }
     } catch (err: any) {
       setSaveStatus({ success: false, message: err.message || 'Failed to save tamper detection' });
-    }
-  };
-
-  const handleSaveUnattended = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!camera || !unattended) return;
-    try {
-      const res = await api.setCameraUnattendedBaggage(camera.id, unattended);
-      setSaveStatus({ success: true, message: res.message });
-    } catch (err: any) {
-      setSaveStatus({ success: false, message: err.message || 'Failed to save unattended baggage' });
-    }
-  };
-
-  const handleSaveObjectRemoval = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!camera || !objectRemoval) return;
-    try {
-      const res = await api.setCameraObjectRemoval(camera.id, objectRemoval);
-      setSaveStatus({ success: true, message: res.message });
-    } catch (err: any) {
-      setSaveStatus({ success: false, message: err.message || 'Failed to save object removal' });
     }
   };
 
@@ -1480,19 +1608,34 @@ export const EventsTab: React.FC<EventsTabProps> = ({
     }
   };
 
+  const handleSaveUnattended = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!camera || !unattended) return;
+    try {
+      const res = await api.setCameraUnattendedBaggage(camera.id, unattended);
+      setSaveStatus({ success: true, message: res.message });
+    } catch (err: any) {
+      setSaveStatus({ success: false, message: err.message || 'Failed to save unattended baggage' });
+    }
+  };
+
+  const handleSaveObjectRemoval = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!camera || !objectRemoval) return;
+    try {
+      const res = await api.setCameraObjectRemoval(camera.id, objectRemoval);
+      setSaveStatus({ success: true, message: res.message });
+    } catch (err: any) {
+      setSaveStatus({ success: false, message: err.message || 'Failed to save object removal' });
+    }
+  };
+
   return (
     <div className="space-y-6">
-      <div>
-        <h3 className="text-sm font-semibold text-white mb-1">Events</h3>
-        <p className="text-xs text-slate-400">
-          Configure motion triggers, line crossing (VCA), intrusion zones, tampering, unattended baggage, and object removal.
-        </p>
-      </div>
-
-      {/* Smart Event Sub-Navigation Pills (Only Supported Events) */}
-      <div className="flex flex-wrap rounded-xl bg-slate-900 p-1 border border-slate-800 gap-1 w-fit">
+      {/* Smart Event Types Selection Bar (Top Horizontal Navigation) */}
+      <div className="flex flex-wrap items-center gap-2 p-1.5 bg-slate-900/90 border border-slate-800 rounded-xl overflow-x-auto shadow-sm">
         {supportedSmartEvents.map((evt) => {
-          const IconComponent = evt.icon;
+          const Icon = evt.icon;
           const isActive = activeSmartEvent === evt.id;
           return (
             <button
@@ -1502,13 +1645,13 @@ export const EventsTab: React.FC<EventsTabProps> = ({
                 setActiveSmartEvent(evt.id);
                 handleCancelDrawing();
               }}
-              className={`py-1.5 px-3 text-xs font-medium rounded-lg transition-colors flex items-center gap-1.5 cursor-pointer ${
+              className={`flex items-center gap-2 px-3 py-1.5 rounded-lg text-xs font-semibold transition-all cursor-pointer whitespace-nowrap ${
                 isActive
-                  ? `${evt.activeBg} text-white shadow-sm font-semibold`
-                  : 'text-slate-400 hover:text-white'
+                  ? `${evt.activeBg} text-white shadow-md font-bold scale-[1.02]`
+                  : 'text-slate-400 hover:text-slate-200 hover:bg-slate-800/60'
               }`}
             >
-              <IconComponent className="w-3.5 h-3.5" />
+              <Icon className={`w-3.5 h-3.5 ${isActive ? 'text-white' : evt.color}`} />
               <span>{evt.label}</span>
             </button>
           );
@@ -1563,6 +1706,7 @@ export const EventsTab: React.FC<EventsTabProps> = ({
             currentMaxSize={getCurrentMaxSize()}
             onStartDragSizeCorner={handleStartDragSizeCorner}
             onStartDragSizeBody={handleStartDragSizeBody}
+            onStartDragExpertBody={handleStartDragExpertBody}
           />
 
           {/* Top Right Action: Refresh Snapshot & Events (Icon Only) */}
