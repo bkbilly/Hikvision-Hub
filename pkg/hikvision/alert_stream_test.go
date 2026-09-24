@@ -3,6 +3,7 @@ package hikvision
 import (
 	"context"
 	"net"
+	"os"
 	"testing"
 	"time"
 
@@ -130,7 +131,12 @@ func TestAlertStreamManagerMockLifecycle(t *testing.T) {
 }
 
 func TestAlertStreamLiveCamera(t *testing.T) {
-	ip := "192.168.2.176"
+	ip := os.Getenv("HIKVISION_TEST_IP")
+	pwd := os.Getenv("HIKVISION_TEST_PASSWORD")
+	if ip == "" || pwd == "" {
+		t.Skip("Skipping live camera test: HIKVISION_TEST_IP or HIKVISION_TEST_PASSWORD not set")
+		return
+	}
 	conn, err := net.DialTimeout("tcp", ip+":80", 1*time.Second)
 	if err != nil {
 		t.Skipf("Live camera %s not reachable: %v", ip, err)
@@ -142,11 +148,11 @@ func TestAlertStreamLiveCamera(t *testing.T) {
 	defer cancel()
 
 	cam := models.Camera{
-		ID:       6,
-		Name:     "Diningroom",
+		ID:       1,
+		Name:     "TestCam",
 		IP:       ip,
 		Username: "admin",
-		Password: "loco8Way",
+		Password: pwd,
 		Enabled:  true,
 	}
 

@@ -241,7 +241,7 @@ export const TimeTab: React.FC<TimeTabProps> = ({
                         ip_address: val,
                       });
                     }}
-                    placeholder="pool.ntp.org or 192.168.2.150"
+                    placeholder="pool.ntp.org or 192.168.1.1"
                     className="w-full bg-slate-950 border border-slate-700/80 rounded-lg px-3 py-2 text-xs sm:text-sm text-white focus:outline-none focus:border-blue-500 font-mono"
                   />
                 </div>

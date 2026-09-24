@@ -30,7 +30,7 @@ func TestCameraDiscoverAndProbeEndpoints(t *testing.T) {
 	// Seed existing camera
 	cam := &models.Camera{
 		Name:     "Existing Cam",
-		IP:       "192.168.2.170",
+		IP:       "192.168.1.100",
 		Path:     filepath.Join(tempDir, "cam1", "info.bin"),
 		Username: "admin",
 		Enabled:  true,

@@ -247,6 +247,22 @@ type TamperDetection struct {
 	Coordinates []Point  `json:"coordinates,omitempty"`
 }
 
+// SceneChangeDetection represents camera scene change / displacement detection.
+type SceneChangeDetection struct {
+	XMLName     xml.Name `xml:"SceneChangeDetection" json:"-"`
+	Enabled     bool     `json:"enabled"`
+	Sensitivity int      `json:"sensitivity"` // 1-100
+}
+
+// FaceDetection represents smart face detection configuration.
+type FaceDetection struct {
+	XMLName         xml.Name `xml:"FaceDetect" json:"-"`
+	Enabled         bool     `json:"enabled"`
+	Sensitivity     int      `json:"sensitivity"`      // 1-5
+	EnableHighlight bool     `json:"enable_highlight"`  // dynamic face highlight (highlightsenabled)
+}
+
+
 // PrivacyMaskRegion represents one privacy mask rectangle (4 coordinates).
 type PrivacyMaskRegion struct {
 	ID          int     `json:"id"`
@@ -275,6 +291,18 @@ type HddInfo struct {
 	Path        string `json:"path,omitempty"`      // NAS Mount Path
 }
 
+// StorageQuota represents disk allocation between video recordings and picture snapshots.
+type StorageQuota struct {
+	ID                 int    `json:"id"`
+	Type               string `json:"type"` // "ratio"
+	VideoQuotaRatio    int    `json:"video_quota_ratio"`    // percentage, e.g. 80
+	PictureQuotaRatio  int    `json:"picture_quota_ratio"`  // percentage, e.g. 20
+	TotalVideoVolumeMB int64  `json:"total_video_volume_mb"`
+	TotalPicVolumeMB   int64  `json:"total_pic_volume_mb"`
+	FreeVideoQuotaMB   int64  `json:"free_video_quota_mb"`
+	FreePicQuotaMB     int64  `json:"free_pic_quota_mb"`
+}
+
 // PTZPreset represents a PTZ preset target.
 type PTZPreset struct {
 	ID   int    `json:"id"`
@@ -296,6 +324,8 @@ type CameraCapabilities struct {
 	HasLineDetection       bool     `json:"has_line_detection"`
 	HasIntrusionDetection  bool     `json:"has_intrusion_detection"`
 	HasTamperDetection     bool     `json:"has_tamper_detection"`
+	HasSceneChangeDetection bool    `json:"has_scene_change_detection"`
+	HasFaceDetection        bool    `json:"has_face_detection"`
 	HasPrivacyMask         bool     `json:"has_privacy_mask"`
 	HasUnattendedBaggage   bool     `json:"has_unattended_baggage"`
 	HasObjectRemoval       bool     `json:"has_object_removal"`
@@ -304,7 +334,88 @@ type CameraCapabilities struct {
 	HasTargetDetection     bool     `json:"has_target_detection"`
 	HasPolygonMotion       bool     `json:"has_polygon_motion"`
 	HasStorage             bool     `json:"has_storage"`
+	HasRecordSchedule       bool    `json:"has_record_schedule"`
+	HasCapture              bool    `json:"has_capture"`
 	HasPTZ                 bool     `json:"has_ptz"`
 	SupportedCodecs        []string `json:"supported_codecs"`
 	SupportedResolutions   []string `json:"supported_resolutions"`
 }
+
+// ScheduleTimeRange represents a start and end time interval (e.g. 00:00 - 24:00).
+type ScheduleTimeRange struct {
+	BeginTime string `json:"begin_time"` // "HH:MM" or "HH:MM:SS"
+	EndTime   string `json:"end_time"`   // "HH:MM" or "HH:MM:SS"
+}
+
+// DailySchedule represents time blocks configured for a specific day of the week.
+type DailySchedule struct {
+	DayOfWeek  int                 `json:"day_of_week"` // 1=Monday .. 7=Sunday
+	TimeRanges []ScheduleTimeRange `json:"time_ranges"`
+}
+
+// EventSchedule represents the 7-day arming schedule for an event.
+type EventSchedule struct {
+	EventType string          `json:"event_type"`
+	Days      []DailySchedule `json:"days"`
+}
+
+// EventLinkage represents the notification actions and triggers when an event occurs.
+type EventLinkage struct {
+	EventType                string `json:"event_type"`
+	NotifySurveillanceCenter bool   `json:"notify_surveillance_center"` // "center"
+	SendEmail                bool   `json:"send_email"`                  // "email"
+	UploadFTP                bool   `json:"upload_ftp"`                  // "FTP"
+	AudibleWarning           bool   `json:"audible_warning"`             // "beep"
+	TriggerChannelRecord     bool   `json:"trigger_channel_record"`      // "record"
+	TriggerAlarmOutput       bool   `json:"trigger_alarm_output"`        // "triggerAlarmOutput"
+}
+
+// RecordTimeRange represents a time block with continuous or event recording mode.
+type RecordTimeRange struct {
+	BeginTime  string `json:"begin_time"`  // "HH:MM:SS"
+	EndTime    string `json:"end_time"`    // "HH:MM:SS"
+	RecordMode string `json:"record_mode"` // "CMR" (continuous) or "AllEvent" (event/motion)
+}
+
+// RecordScheduleDay represents recording schedule time ranges for one day.
+type RecordScheduleDay struct {
+	DayOfWeek  int               `json:"day_of_week"` // 1=Monday .. 7=Sunday
+	TimeRanges []RecordTimeRange `json:"time_ranges"`
+}
+
+// RecordSchedule represents camera storage recording track schedule (Track 1 for video, Track 103 for capture).
+type RecordSchedule struct {
+	TrackID               int                 `json:"track_id"`
+	Enabled               bool                `json:"enabled"`
+	EnableSchedule        bool                `json:"enable_schedule"`
+	PreRecordTimeSeconds  int                 `json:"pre_record_time_seconds"`
+	PostRecordTimeSeconds int                 `json:"post_record_time_seconds"`
+	Days                  []RecordScheduleDay `json:"days"`
+	SupportedRecordModes  []string            `json:"supported_record_modes,omitempty"`
+}
+
+// TimingCaptureConfig represents periodic snapshot capture settings.
+type TimingCaptureConfig struct {
+	Enabled    bool   `json:"enabled"`
+	Resolution string `json:"resolution"`
+	Quality    int    `json:"quality"`
+	IntervalMs int    `json:"interval_ms"`
+}
+
+// EventCaptureConfig represents event-triggered snapshot capture settings.
+type EventCaptureConfig struct {
+	Enabled      bool   `json:"enabled"`
+	Resolution   string `json:"resolution"`
+	Quality      int    `json:"quality"`
+	IntervalMs   int    `json:"interval_ms"`
+	CaptureCount int    `json:"capture_count"`
+}
+
+// CaptureSettings represents the camera picture snapshot capture configuration and schedule.
+type CaptureSettings struct {
+	ChannelID     int                 `json:"channel_id"`
+	TimingCapture TimingCaptureConfig `json:"timing_capture"`
+	EventCapture  EventCaptureConfig  `json:"event_capture"`
+	Schedule      *RecordSchedule     `json:"schedule,omitempty"`
+}
+

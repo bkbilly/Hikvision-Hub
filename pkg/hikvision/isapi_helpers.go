@@ -95,7 +95,22 @@ func parseStorageXML(xmlContent string) []HddInfo {
 		block := m[2]
 		id := parseXMLIntAny(block, 0, "id", "hddId", "volumeId", "nasId", "serverID")
 		name := extractXMLTagAny(block, "hddName", "name", "volumeName", "nasName", "serverName")
-		typ := extractXMLTagAny(block, "hddType", "nasType", "type", "volumeType", "protocol")
+
+		// In Hikvision XML, <mountType> (e.g. "SMB/CIFS", "NFS") defines the active network protocol.
+		// A legacy <nasType>NFS</nasType> is often present even when configured as SMB/CIFS,
+		// so mountType must take precedence.
+		mountType := extractXMLTagAny(block, "mountType", "MountType")
+		var typ string
+		if mountType != "" {
+			typ = mountType
+		} else {
+			typ = extractXMLTagAny(block, "hddType", "nasType", "type", "volumeType", "protocol")
+		}
+		if strings.Contains(strings.ToUpper(typ), "SMB") || strings.Contains(strings.ToUpper(typ), "CIFS") {
+			typ = "SMB/CIFS"
+		} else if strings.EqualFold(typ, "NFS") {
+			typ = "NFS"
+		}
 		status := extractXMLTagAny(block, "status", "hddStatus", "nasStatus", "volumeStatus", "state")
 		prop := extractXMLTagAny(block, "property", "hddProperty")
 		host := extractXMLTagAny(block, "hostName", "ipAddress", "ipv6Address", "serverAddress", "address")
@@ -144,6 +159,9 @@ func parseStorageXML(xmlContent string) []HddInfo {
 		}
 
 		// Normalize status
+		if strings.EqualFold(status, "formating") {
+			status = "formatting"
+		}
 		if status == "" {
 			if capMB > 0 {
 				status = "normal"

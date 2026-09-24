@@ -25,6 +25,13 @@ import type {
   RegionEntrance,
   RegionExiting,
   UserInfo,
+  SceneChangeDetection,
+  FaceDetection,
+  EventSchedule,
+  EventLinkage,
+  RecordSchedule,
+  CaptureSettings,
+  StorageQuota,
 } from './types';
 
 const API_BASE = '/api';
@@ -381,6 +388,72 @@ export const api = {
   formatCameraStorage: (id: number, hddId: number) =>
     request<{ success: boolean; message: string }>(`/cameras/${id}/isapi/storage/${hddId}/format`, {
       method: 'POST',
+    }),
+
+  getStorageQuota: (id: number) =>
+    request<StorageQuota>(`/cameras/${id}/isapi/storage/quota`),
+
+  setStorageQuota: (id: number, videoRatio: number, pictureRatio: number) =>
+    request<{ success: boolean; message: string }>(`/cameras/${id}/isapi/storage/quota`, {
+      method: 'PUT',
+      body: JSON.stringify({
+        video_quota_ratio: videoRatio,
+        picture_quota_ratio: pictureRatio,
+      }),
+    }),
+
+  getRecordSchedule: (id: number, track = 1) =>
+    request<RecordSchedule>(`/cameras/${id}/isapi/storage/schedule?track=${track}`),
+
+  setRecordSchedule: (id: number, data: RecordSchedule, track = 1) =>
+    request<{ success: boolean; message: string }>(`/cameras/${id}/isapi/storage/schedule?track=${track}`, {
+      method: 'PUT',
+      body: JSON.stringify(data),
+    }),
+
+  getCameraSceneChange: (id: number) =>
+    request<SceneChangeDetection>(`/cameras/${id}/isapi/scene-change`),
+
+  setCameraSceneChange: (id: number, data: SceneChangeDetection) =>
+    request<{ success: boolean; message: string }>(`/cameras/${id}/isapi/scene-change`, {
+      method: 'PUT',
+      body: JSON.stringify(data),
+    }),
+
+  getCameraFaceDetection: (id: number) =>
+    request<FaceDetection>(`/cameras/${id}/isapi/face-detection`),
+
+  setCameraFaceDetection: (id: number, data: FaceDetection) =>
+    request<{ success: boolean; message: string }>(`/cameras/${id}/isapi/face-detection`, {
+      method: 'PUT',
+      body: JSON.stringify(data),
+    }),
+
+  getEventSchedule: (id: number, eventType: string) =>
+    request<EventSchedule>(`/cameras/${id}/isapi/events/${eventType}/schedule`),
+
+  setEventSchedule: (id: number, eventType: string, data: EventSchedule) =>
+    request<{ success: boolean; message: string }>(`/cameras/${id}/isapi/events/${eventType}/schedule`, {
+      method: 'PUT',
+      body: JSON.stringify(data),
+    }),
+
+  getEventLinkage: (id: number, eventType: string) =>
+    request<EventLinkage>(`/cameras/${id}/isapi/events/${eventType}/linkage`),
+
+  setEventLinkage: (id: number, eventType: string, data: EventLinkage) =>
+    request<{ success: boolean; message: string }>(`/cameras/${id}/isapi/events/${eventType}/linkage`, {
+      method: 'PUT',
+      body: JSON.stringify(data),
+    }),
+
+  getCaptureSettings: (id: number) =>
+    request<CaptureSettings>(`/cameras/${id}/isapi/capture`),
+
+  setCaptureSettings: (id: number, data: CaptureSettings) =>
+    request<{ success: boolean; message: string }>(`/cameras/${id}/isapi/capture`, {
+      method: 'PUT',
+      body: JSON.stringify(data),
     }),
 
   rebootCamera: (id: number) =>

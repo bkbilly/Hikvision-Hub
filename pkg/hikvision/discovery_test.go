@@ -20,17 +20,17 @@ func TestGenerateUUID(t *testing.T) {
 
 func TestSADPProbeMatchXML(t *testing.T) {
 	sample := `<?xml version="1.0" encoding="UTF-8"?>
-<ProbeMatch><Uuid>d311b3b5-a4c1-47c0-bf4b-c0a26de18451</Uuid>
+<ProbeMatch><Uuid>00000000-0000-0000-0000-000000000000</Uuid>
 <Types>inquiry</Types>
 <DeviceType>155650</DeviceType>
 <DeviceDescription>DS-2CD2T47G1-L</DeviceDescription>
-<DeviceSN>DS-2CD2T47G1-L20190522AAWRD22374804</DeviceSN>
+<DeviceSN>DS-2CD2T47G1-L00000000AAWR00000000</DeviceSN>
 <CommandPort>8000</CommandPort>
 <HttpPort>80</HttpPort>
-<MAC>68-6d-bc-3b-52-dd</MAC>
-<IPv4Address>192.168.2.173</IPv4Address>
+<MAC>00-11-22-33-44-55</MAC>
+<IPv4Address>192.0.2.100</IPv4Address>
 <IPv4SubnetMask>255.255.255.0</IPv4SubnetMask>
-<IPv4Gateway>192.168.2.1</IPv4Gateway>
+<IPv4Gateway>192.0.2.1</IPv4Gateway>
 <SoftwareVersion>V5.6.5build 200316</SoftwareVersion>
 <Activated>true</Activated>
 </ProbeMatch>`
@@ -40,8 +40,8 @@ func TestSADPProbeMatchXML(t *testing.T) {
 		t.Fatalf("failed to unmarshal SADP XML: %v", err)
 	}
 
-	if match.IPv4Address != "192.168.2.173" {
-		t.Errorf("expected IP 192.168.2.173, got %s", match.IPv4Address)
+	if match.IPv4Address != "192.0.2.100" {
+		t.Errorf("expected IP 192.0.2.100, got %s", match.IPv4Address)
 	}
 	if match.DeviceDescription != "DS-2CD2T47G1-L" {
 		t.Errorf("expected DeviceDescription DS-2CD2T47G1-L, got %s", match.DeviceDescription)
@@ -49,8 +49,8 @@ func TestSADPProbeMatchXML(t *testing.T) {
 	if match.HttpPort != 80 {
 		t.Errorf("expected HttpPort 80, got %d", match.HttpPort)
 	}
-	if match.MAC != "68-6d-bc-3b-52-dd" {
-		t.Errorf("expected MAC 68-6d-bc-3b-52-dd, got %s", match.MAC)
+	if match.MAC != "00-11-22-33-44-55" {
+		t.Errorf("expected MAC 00-11-22-33-44-55, got %s", match.MAC)
 	}
 }
 

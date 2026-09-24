@@ -10,6 +10,8 @@ import {
   LogOut,
   RefreshCw,
   Crosshair,
+  Camera as CameraIcon,
+  UserCheck,
 } from 'lucide-react';
 import type {
   Camera,
@@ -23,6 +25,8 @@ import type {
   ObjectRemovalDetection,
   RegionEntrance,
   RegionExiting,
+  SceneChangeDetection,
+  FaceDetection,
   Point,
 } from '../../../types';
 import { api } from '../../../api';
@@ -35,6 +39,10 @@ import { UnattendedBaggageForm } from './UnattendedBaggageForm';
 import { ObjectRemovalForm } from './ObjectRemovalForm';
 import { RegionEntranceForm } from './RegionEntranceForm';
 import { RegionExitingForm } from './RegionExitingForm';
+import { SceneChangeForm } from './SceneChangeForm';
+import { FaceDetectionForm } from './FaceDetectionForm';
+import { ArmingScheduleSection } from './ArmingScheduleSection';
+import { LinkageMethodSection } from './LinkageMethodSection';
 
 export const isZeroArea = (pts?: Point[]): boolean => {
   if (!pts || pts.length < 4) return true;
@@ -79,7 +87,7 @@ export const EventsTab: React.FC<EventsTabProps> = ({
   onRefreshPreview,
 }) => {
   const [activeSmartEvent, setActiveSmartEvent] = useState<
-    'motion' | 'line' | 'intrusion' | 'tamper' | 'unattended' | 'removal' | 'entrance' | 'exiting'
+    'motion' | 'line' | 'intrusion' | 'tamper' | 'scene' | 'face' | 'unattended' | 'removal' | 'entrance' | 'exiting'
   >('motion');
 
   const [localSnapshotKey, setLocalSnapshotKey] = useState(Date.now());
@@ -96,6 +104,8 @@ export const EventsTab: React.FC<EventsTabProps> = ({
   const [lineDetection, setLineDetection] = useState<LineDetection | null>(null);
   const [intrusion, setIntrusion] = useState<FieldDetection | null>(null);
   const [tamper, setTamper] = useState<TamperDetection | null>(null);
+  const [scene, setScene] = useState<SceneChangeDetection | null>(null);
+  const [face, setFace] = useState<FaceDetection | null>(null);
   const [unattended, setUnattended] = useState<UnattendedBaggageDetection | null>(null);
   const [objectRemoval, setObjectRemoval] = useState<ObjectRemovalDetection | null>(null);
   const [regionEntrance, setRegionEntrance] = useState<RegionEntrance | null>(null);
@@ -136,7 +146,12 @@ export const EventsTab: React.FC<EventsTabProps> = ({
   const [dragSizeBodyStart, setDragSizeBodyStart] = useState<Point | null>(null);
   const [dragSizeBodyOrig, setDragSizeBodyOrig] = useState<Point[] | null>(null);
 
-  const loadEventsData = useCallback(async () => {
+  // Track loaded events so we only fetch data once per event type
+  const loadedEventsRef = useRef<Set<string>>(new Set());
+  const [localRefreshKey, setLocalRefreshKey] = useState(0);
+  const effectiveRefreshKey = (refreshKey || 0) + localRefreshKey;
+
+  const resetDrawingStates = () => {
     setDrawStep(null);
     setDrawIntrusionStep(null);
     setDrawExpertRectCorner1(null);
@@ -153,10 +168,16 @@ export const EventsTab: React.FC<EventsTabProps> = ({
     setIsDraggingSizeBody(null);
     setDragSizeBodyStart(null);
     setDragSizeBodyOrig(null);
+  };
 
-    await Promise.allSettled([
-      api.getCameraMotion(camera.id)
-        .then((res) => {
+  const loadSingleEvent = useCallback(async (eventType: string) => {
+    if (!camera) return;
+    resetDrawingStates();
+
+    switch (eventType) {
+      case 'motion':
+        try {
+          const res = await api.getCameraMotion(camera.id);
           if (!isMountedRef.current) return;
           let regions = res.regions ? [...res.regions] : [];
           while (regions.length < 8) {
@@ -197,60 +218,126 @@ export const EventsTab: React.FC<EventsTabProps> = ({
             };
           });
           setMotion({ ...res, regions });
-        })
-        .catch((err) => console.warn('motion error', err)),
+        } catch (err) {
+          console.warn('motion error', err);
+        }
+        break;
 
-      api.getCameraLineDetection(camera.id)
-        .then((res) => {
+      case 'line':
+        try {
+          const res = await api.getCameraLineDetection(camera.id);
           if (isMountedRef.current) setLineDetection(res);
-        })
-        .catch((err) => console.warn('line error', err)),
+        } catch (err) {
+          console.warn('line error', err);
+        }
+        break;
 
-      api.getCameraIntrusion(camera.id)
-        .then((res) => {
+      case 'intrusion':
+        try {
+          const res = await api.getCameraIntrusion(camera.id);
           if (isMountedRef.current) setIntrusion(res);
-        })
-        .catch((err) => console.warn('intrusion error', err)),
+        } catch (err) {
+          console.warn('intrusion error', err);
+        }
+        break;
 
-      api.getCameraTamper(camera.id)
-        .then((res) => {
+      case 'tamper':
+        try {
+          const res = await api.getCameraTamper(camera.id);
           if (isMountedRef.current) setTamper(res);
-        })
-        .catch((err) => console.warn('tamper error', err)),
+        } catch (err) {
+          console.warn('tamper error', err);
+        }
+        break;
 
-      api.getCameraUnattendedBaggage(camera.id)
-        .then((res) => {
+      case 'scene':
+        if (capabilities && !capabilities.has_scene_change_detection) break;
+        try {
+          const res = await api.getCameraSceneChange(camera.id);
+          if (isMountedRef.current) setScene(res);
+        } catch {
+          if (isMountedRef.current) setScene(null);
+        }
+        break;
+
+      case 'face':
+        if (capabilities && !capabilities.has_face_detection) break;
+        try {
+          const res = await api.getCameraFaceDetection(camera.id);
+          if (isMountedRef.current) setFace(res);
+        } catch {
+          if (isMountedRef.current) setFace(null);
+        }
+        break;
+
+      case 'unattended':
+        try {
+          const res = await api.getCameraUnattendedBaggage(camera.id);
           if (isMountedRef.current) setUnattended(res);
-        })
-        .catch(() => {
+        } catch {
           if (isMountedRef.current) setUnattended(null);
-        }),
+        }
+        break;
 
-      api.getCameraObjectRemoval(camera.id)
-        .then((res) => {
+      case 'removal':
+        try {
+          const res = await api.getCameraObjectRemoval(camera.id);
           if (isMountedRef.current) setObjectRemoval(res);
-        })
-        .catch(() => {
+        } catch {
           if (isMountedRef.current) setObjectRemoval(null);
-        }),
+        }
+        break;
 
-      api.getCameraRegionEntrance(camera.id)
-        .then((res) => {
+      case 'entrance':
+        try {
+          const res = await api.getCameraRegionEntrance(camera.id);
           if (isMountedRef.current) setRegionEntrance(res);
-        })
-        .catch(() => {
+        } catch {
           if (isMountedRef.current) setRegionEntrance(null);
-        }),
+        }
+        break;
 
-      api.getCameraRegionExiting(camera.id)
-        .then((res) => {
+      case 'exiting':
+        try {
+          const res = await api.getCameraRegionExiting(camera.id);
           if (isMountedRef.current) setRegionExiting(res);
-        })
-        .catch(() => {
+        } catch {
           if (isMountedRef.current) setRegionExiting(null);
-        }),
-    ]);
+        }
+        break;
+    }
+  }, [camera.id, capabilities]);
+
+  // Reset event states when switching cameras
+  useEffect(() => {
+    loadedEventsRef.current.clear();
+    setMotion(null);
+    setLineDetection(null);
+    setIntrusion(null);
+    setTamper(null);
+    setScene(null);
+    setFace(null);
+    setUnattended(null);
+    setObjectRemoval(null);
+    setRegionEntrance(null);
+    setRegionExiting(null);
   }, [camera.id]);
+
+  // Load active event only once when navigated to
+  useEffect(() => {
+    if (!loadedEventsRef.current.has(activeSmartEvent)) {
+      loadedEventsRef.current.add(activeSmartEvent);
+      loadSingleEvent(activeSmartEvent);
+    }
+  }, [activeSmartEvent, loadSingleEvent]);
+
+  // Re-fetch current event ONLY when effectiveRefreshKey changes (top or local refresh button pressed)
+  const prevEffectiveRefreshKeyRef = useRef(effectiveRefreshKey);
+  useEffect(() => {
+    if (prevEffectiveRefreshKeyRef.current === effectiveRefreshKey) return;
+    prevEffectiveRefreshKeyRef.current = effectiveRefreshKey;
+    loadSingleEvent(activeSmartEvent);
+  }, [effectiveRefreshKey, activeSmartEvent, loadSingleEvent]);
 
   useEffect(() => {
     isMountedRef.current = true;
@@ -259,16 +346,17 @@ export const EventsTab: React.FC<EventsTabProps> = ({
     };
   }, []);
 
+  const handleRefreshEvents = useCallback(async () => {
+    setLocalRefreshKey((prev) => prev + 1);
+    await loadSingleEvent(activeSmartEvent);
+  }, [activeSmartEvent, loadSingleEvent]);
+
   useEffect(() => {
-    onRegisterRefresh?.(loadEventsData);
+    onRegisterRefresh?.(handleRefreshEvents);
     return () => {
       onRegisterRefresh?.(undefined as any);
     };
-  }, [loadEventsData, onRegisterRefresh]);
-
-  useEffect(() => {
-    loadEventsData();
-  }, [loadEventsData, refreshKey]);
+  }, [handleRefreshEvents, onRegisterRefresh]);
 
   // Esc key & PointerUp window listener
   useEffect(() => {
@@ -298,14 +386,12 @@ export const EventsTab: React.FC<EventsTabProps> = ({
 
   // Capabilities helpers
   const supportsTargetDetection = Boolean(
-    capabilities?.has_target_detection ||
-    camera?.ip === '192.168.2.176'
+    capabilities?.has_target_detection
   );
 
   const isPolygonMotion = Boolean(
     capabilities?.has_polygon_motion ||
-    (motion?.coordinates && motion.coordinates.length >= 3) ||
-    camera?.ip === '192.168.2.176'
+    (motion?.coordinates && motion.coordinates.length >= 3)
   );
 
   // Supported smart event tabs dynamically filtered by camera capabilities
@@ -359,12 +445,28 @@ export const EventsTab: React.FC<EventsTabProps> = ({
       has: capabilities ? capabilities.has_tamper_detection : true,
     },
     {
+      id: 'scene' as const,
+      label: 'Scene Change',
+      icon: CameraIcon,
+      color: 'text-cyan-400',
+      activeBg: 'bg-cyan-600',
+      has: Boolean(capabilities?.has_scene_change_detection),
+    },
+    {
+      id: 'face' as const,
+      label: 'Face Detection',
+      icon: UserCheck,
+      color: 'text-rose-400',
+      activeBg: 'bg-rose-600',
+      has: Boolean(capabilities?.has_face_detection),
+    },
+    {
       id: 'unattended' as const,
       label: 'Unattended Baggage',
       icon: Briefcase,
       color: 'text-teal-400',
       activeBg: 'bg-teal-600',
-      has: capabilities ? Boolean(capabilities.has_unattended_baggage) : true,
+      has: Boolean(capabilities?.has_unattended_baggage),
     },
     {
       id: 'removal' as const,
@@ -372,9 +474,16 @@ export const EventsTab: React.FC<EventsTabProps> = ({
       icon: Package,
       color: 'text-orange-400',
       activeBg: 'bg-orange-600',
-      has: capabilities ? Boolean(capabilities.has_object_removal) : true,
+      has: Boolean(capabilities?.has_object_removal),
     },
   ] as const).filter((item) => item.has);
+
+  // Fallback to first supported event tab if activeSmartEvent is not supported by current camera
+  useEffect(() => {
+    if (supportedSmartEvents.length > 0 && !supportedSmartEvents.some((e) => e.id === activeSmartEvent)) {
+      setActiveSmartEvent(supportedSmartEvents[0].id);
+    }
+  }, [supportedSmartEvents, activeSmartEvent]);
 
   // Grid dimension & serialization helpers
   const getGridDimensions = () => {
@@ -1463,6 +1572,10 @@ export const EventsTab: React.FC<EventsTabProps> = ({
         return !regionExiting?.enabled;
       case 'tamper':
         return !tamper?.enabled;
+      case 'scene':
+        return !capabilities?.has_scene_change_detection || !scene?.enabled;
+      case 'face':
+        return !capabilities?.has_face_detection || !face?.enabled;
       case 'unattended':
         return !unattended?.enabled;
       case 'removal':
@@ -1490,12 +1603,38 @@ export const EventsTab: React.FC<EventsTabProps> = ({
         return 'Region Exiting';
       case 'tamper':
         return 'Video Tampering';
+      case 'scene':
+        return 'Scene Change Detection';
+      case 'face':
+        return 'Face Detection';
       case 'unattended':
         return 'Unattended Baggage';
       case 'removal':
         return 'Object Removal';
       default:
         return 'Event';
+    }
+  };
+
+  const handleSaveScene = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!camera || !scene) return;
+    try {
+      const res = await api.setCameraSceneChange(camera.id, scene);
+      setSaveStatus({ success: true, message: res.message });
+    } catch (err: any) {
+      setSaveStatus({ success: false, message: err.message || 'Failed to save scene change' });
+    }
+  };
+
+  const handleSaveFace = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!camera || !face) return;
+    try {
+      const res = await api.setCameraFaceDetection(camera.id, face);
+      setSaveStatus({ success: true, message: res.message });
+    } catch (err: any) {
+      setSaveStatus({ success: false, message: err.message || 'Failed to save face detection' });
     }
   };
 
@@ -1715,7 +1854,8 @@ export const EventsTab: React.FC<EventsTabProps> = ({
               type="button"
               onClick={() => {
                 refreshPreview();
-                loadEventsData();
+                setLocalRefreshKey((prev) => prev + 1);
+                loadSingleEvent(activeSmartEvent);
               }}
               title="Refresh Snapshot & Events"
               className="p-1.5 bg-black/70 hover:bg-black/90 text-slate-300 hover:text-white backdrop-blur-md rounded-lg border border-white/10 shadow-md transition-all cursor-pointer"
@@ -1787,127 +1927,179 @@ export const EventsTab: React.FC<EventsTabProps> = ({
 
       {/* --- SINGLE ACTIVE FORM --- */}
       {activeSmartEvent === 'motion' && motion && (
-        <MotionDetectionForm
-          motion={motion}
-          setMotion={setMotion}
-          isPolygonMotion={isPolygonMotion}
-          supportsTargetDetection={supportsTargetDetection}
-          activeExpertAreaIndex={activeExpertAreaIndex}
-          setActiveExpertAreaIndex={setActiveExpertAreaIndex}
-          getExpertRegions={getExpertRegions}
-          updateActiveExpertRegion={updateActiveExpertRegion}
-          getGridDimensions={getGridDimensions}
-          countActiveGridCells={countActiveGridCells}
-          onSelectAllGrid={handleSelectAllGrid}
-          onClearAllGrid={handleClearAllGrid}
-          onInvertGrid={handleInvertGrid}
-          onStartNormalMotionPolygon={handleStartNormalMotionPolygon}
-          onStartExpertRect={() => handleStart4PointDrawing('motion_expert')}
-          onSave={handleSaveMotion}
-        />
+        <div className="space-y-4">
+          <MotionDetectionForm
+            motion={motion}
+            setMotion={setMotion}
+            isPolygonMotion={isPolygonMotion}
+            supportsTargetDetection={supportsTargetDetection}
+            activeExpertAreaIndex={activeExpertAreaIndex}
+            setActiveExpertAreaIndex={setActiveExpertAreaIndex}
+            getExpertRegions={getExpertRegions}
+            updateActiveExpertRegion={updateActiveExpertRegion}
+            getGridDimensions={getGridDimensions}
+            countActiveGridCells={countActiveGridCells}
+            onSelectAllGrid={handleSelectAllGrid}
+            onClearAllGrid={handleClearAllGrid}
+            onInvertGrid={handleInvertGrid}
+            onStartNormalMotionPolygon={handleStartNormalMotionPolygon}
+            onStartExpertRect={() => handleStart4PointDrawing('motion_expert')}
+            onSave={handleSaveMotion}
+          />
+          <ArmingScheduleSection cameraId={camera.id} eventType="motion" refreshKey={effectiveRefreshKey} />
+          <LinkageMethodSection cameraId={camera.id} eventType="motion" refreshKey={effectiveRefreshKey} />
+        </div>
       )}
 
       {activeSmartEvent === 'line' && lineDetection && (
-        <LineCrossingForm
-          lineDetection={lineDetection}
-          setLineDetection={setLineDetection}
-          supportsTargetDetection={supportsTargetDetection}
-          onStartDrawing={handleStartDrawing}
-          onSave={handleSaveLineDetection}
-          onStartDrawMinSize={handleStartDrawMinSize}
-          onStartDrawMaxSize={handleStartDrawMaxSize}
-          onClearMinSize={handleClearMinSize}
-          onClearMaxSize={handleClearMaxSize}
-          onClearAllSizes={handleClearAllSizes}
-          drawingMode={drawSizeMode}
-        />
+        <div className="space-y-4">
+          <LineCrossingForm
+            lineDetection={lineDetection}
+            setLineDetection={setLineDetection}
+            supportsTargetDetection={supportsTargetDetection}
+            onStartDrawing={handleStartDrawing}
+            onSave={handleSaveLineDetection}
+            onStartDrawMinSize={handleStartDrawMinSize}
+            onStartDrawMaxSize={handleStartDrawMaxSize}
+            onClearMinSize={handleClearMinSize}
+            onClearMaxSize={handleClearMaxSize}
+            onClearAllSizes={handleClearAllSizes}
+            drawingMode={drawSizeMode}
+          />
+          <ArmingScheduleSection cameraId={camera.id} eventType="line" refreshKey={effectiveRefreshKey} />
+          <LinkageMethodSection cameraId={camera.id} eventType="line" refreshKey={effectiveRefreshKey} />
+        </div>
       )}
 
       {activeSmartEvent === 'intrusion' && intrusion && (
-        <IntrusionDetectionForm
-          intrusion={intrusion}
-          setIntrusion={setIntrusion}
-          supportsTargetDetection={supportsTargetDetection}
-          onStartDrawing={() => handleStart4PointDrawing('intrusion')}
-          onSave={handleSaveIntrusion}
-          onStartDrawMinSize={handleStartDrawMinSize}
-          onStartDrawMaxSize={handleStartDrawMaxSize}
-          onClearMinSize={handleClearMinSize}
-          onClearMaxSize={handleClearMaxSize}
-          onClearAllSizes={handleClearAllSizes}
-          drawingMode={drawSizeMode}
-        />
+        <div className="space-y-4">
+          <IntrusionDetectionForm
+            intrusion={intrusion}
+            setIntrusion={setIntrusion}
+            supportsTargetDetection={supportsTargetDetection}
+            onStartDrawing={() => handleStart4PointDrawing('intrusion')}
+            onSave={handleSaveIntrusion}
+            onStartDrawMinSize={handleStartDrawMinSize}
+            onStartDrawMaxSize={handleStartDrawMaxSize}
+            onClearMinSize={handleClearMinSize}
+            onClearMaxSize={handleClearMaxSize}
+            onClearAllSizes={handleClearAllSizes}
+            drawingMode={drawSizeMode}
+          />
+          <ArmingScheduleSection cameraId={camera.id} eventType="intrusion" refreshKey={effectiveRefreshKey} />
+          <LinkageMethodSection cameraId={camera.id} eventType="intrusion" refreshKey={effectiveRefreshKey} />
+        </div>
       )}
 
       {activeSmartEvent === 'tamper' && tamper && (
-        <TamperDetectionForm
-          tamper={tamper}
-          setTamper={setTamper}
-          onStartDrawing={() => handleStart4PointDrawing('tamper')}
-          onSave={handleSaveTamper}
+        <div className="space-y-4">
+          <TamperDetectionForm
+            tamper={tamper}
+            setTamper={setTamper}
+            onStartDrawing={() => handleStart4PointDrawing('tamper')}
+            onSave={handleSaveTamper}
+          />
+          <ArmingScheduleSection cameraId={camera.id} eventType="tamper" refreshKey={effectiveRefreshKey} />
+          <LinkageMethodSection cameraId={camera.id} eventType="tamper" refreshKey={effectiveRefreshKey} />
+        </div>
+      )}
+
+      {activeSmartEvent === 'scene' && scene && (
+        <SceneChangeForm
+          scene={scene}
+          setScene={setScene}
+          onSave={handleSaveScene}
+          cameraId={camera.id}
+          refreshKey={effectiveRefreshKey}
+        />
+      )}
+
+      {activeSmartEvent === 'face' && face && (
+        <FaceDetectionForm
+          face={face}
+          setFace={setFace}
+          onSave={handleSaveFace}
+          cameraId={camera.id}
+          refreshKey={effectiveRefreshKey}
         />
       )}
 
       {activeSmartEvent === 'unattended' && unattended && (
-        <UnattendedBaggageForm
-          unattended={unattended}
-          setUnattended={setUnattended}
-          onStartDrawing={() => handleStart4PointDrawing('unattended')}
-          onSave={handleSaveUnattended}
-          onStartDrawMinSize={handleStartDrawMinSize}
-          onStartDrawMaxSize={handleStartDrawMaxSize}
-          onClearMinSize={handleClearMinSize}
-          onClearMaxSize={handleClearMaxSize}
-          onClearAllSizes={handleClearAllSizes}
-          drawingMode={drawSizeMode}
-        />
+        <div className="space-y-4">
+          <UnattendedBaggageForm
+            unattended={unattended}
+            setUnattended={setUnattended}
+            onStartDrawing={() => handleStart4PointDrawing('unattended')}
+            onSave={handleSaveUnattended}
+            onStartDrawMinSize={handleStartDrawMinSize}
+            onStartDrawMaxSize={handleStartDrawMaxSize}
+            onClearMinSize={handleClearMinSize}
+            onClearMaxSize={handleClearMaxSize}
+            onClearAllSizes={handleClearAllSizes}
+            drawingMode={drawSizeMode}
+          />
+          <ArmingScheduleSection cameraId={camera.id} eventType="unattended" refreshKey={effectiveRefreshKey} />
+          <LinkageMethodSection cameraId={camera.id} eventType="unattended" refreshKey={effectiveRefreshKey} />
+        </div>
       )}
 
       {activeSmartEvent === 'removal' && objectRemoval && (
-        <ObjectRemovalForm
-          objectRemoval={objectRemoval}
-          setObjectRemoval={setObjectRemoval}
-          onStartDrawing={() => handleStart4PointDrawing('removal')}
-          onSave={handleSaveObjectRemoval}
-          onStartDrawMinSize={handleStartDrawMinSize}
-          onStartDrawMaxSize={handleStartDrawMaxSize}
-          onClearMinSize={handleClearMinSize}
-          onClearMaxSize={handleClearMaxSize}
-          onClearAllSizes={handleClearAllSizes}
-          drawingMode={drawSizeMode}
-        />
+        <div className="space-y-4">
+          <ObjectRemovalForm
+            objectRemoval={objectRemoval}
+            setObjectRemoval={setObjectRemoval}
+            onStartDrawing={() => handleStart4PointDrawing('removal')}
+            onSave={handleSaveObjectRemoval}
+            onStartDrawMinSize={handleStartDrawMinSize}
+            onStartDrawMaxSize={handleStartDrawMaxSize}
+            onClearMinSize={handleClearMinSize}
+            onClearMaxSize={handleClearMaxSize}
+            onClearAllSizes={handleClearAllSizes}
+            drawingMode={drawSizeMode}
+          />
+          <ArmingScheduleSection cameraId={camera.id} eventType="removal" refreshKey={effectiveRefreshKey} />
+          <LinkageMethodSection cameraId={camera.id} eventType="removal" refreshKey={effectiveRefreshKey} />
+        </div>
       )}
 
       {activeSmartEvent === 'entrance' && regionEntrance && (
-        <RegionEntranceForm
-          regionEntrance={regionEntrance}
-          setRegionEntrance={setRegionEntrance}
-          supportsTargetDetection={supportsTargetDetection}
-          onStartDrawing={() => handleStart4PointDrawing('entrance')}
-          onSave={handleSaveRegionEntrance}
-          onStartDrawMinSize={handleStartDrawMinSize}
-          onStartDrawMaxSize={handleStartDrawMaxSize}
-          onClearMinSize={handleClearMinSize}
-          onClearMaxSize={handleClearMaxSize}
-          onClearAllSizes={handleClearAllSizes}
-          drawingMode={drawSizeMode}
-        />
+        <div className="space-y-4">
+          <RegionEntranceForm
+            regionEntrance={regionEntrance}
+            setRegionEntrance={setRegionEntrance}
+            supportsTargetDetection={supportsTargetDetection}
+            onStartDrawing={() => handleStart4PointDrawing('entrance')}
+            onSave={handleSaveRegionEntrance}
+            onStartDrawMinSize={handleStartDrawMinSize}
+            onStartDrawMaxSize={handleStartDrawMaxSize}
+            onClearMinSize={handleClearMinSize}
+            onClearMaxSize={handleClearMaxSize}
+            onClearAllSizes={handleClearAllSizes}
+            drawingMode={drawSizeMode}
+          />
+          <ArmingScheduleSection cameraId={camera.id} eventType="entrance" refreshKey={effectiveRefreshKey} />
+          <LinkageMethodSection cameraId={camera.id} eventType="entrance" refreshKey={effectiveRefreshKey} />
+        </div>
       )}
 
       {activeSmartEvent === 'exiting' && regionExiting && (
-        <RegionExitingForm
-          regionExiting={regionExiting}
-          setRegionExiting={setRegionExiting}
-          supportsTargetDetection={supportsTargetDetection}
-          onStartDrawing={() => handleStart4PointDrawing('exiting')}
-          onSave={handleSaveRegionExiting}
-          onStartDrawMinSize={handleStartDrawMinSize}
-          onStartDrawMaxSize={handleStartDrawMaxSize}
-          onClearMinSize={handleClearMinSize}
-          onClearMaxSize={handleClearMaxSize}
-          onClearAllSizes={handleClearAllSizes}
-          drawingMode={drawSizeMode}
-        />
+        <div className="space-y-4">
+          <RegionExitingForm
+            regionExiting={regionExiting}
+            setRegionExiting={setRegionExiting}
+            supportsTargetDetection={supportsTargetDetection}
+            onStartDrawing={() => handleStart4PointDrawing('exiting')}
+            onSave={handleSaveRegionExiting}
+            onStartDrawMinSize={handleStartDrawMinSize}
+            onStartDrawMaxSize={handleStartDrawMaxSize}
+            onClearMinSize={handleClearMinSize}
+            onClearMaxSize={handleClearMaxSize}
+            onClearAllSizes={handleClearAllSizes}
+            drawingMode={drawSizeMode}
+          />
+          <ArmingScheduleSection cameraId={camera.id} eventType="exiting" refreshKey={effectiveRefreshKey} />
+          <LinkageMethodSection cameraId={camera.id} eventType="exiting" refreshKey={effectiveRefreshKey} />
+        </div>
       )}
     </div>
   );

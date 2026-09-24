@@ -339,6 +339,17 @@ export interface HddInfo {
   path?: string;
 }
 
+export interface StorageQuota {
+  id: number;
+  type: string;
+  video_quota_ratio: number;
+  picture_quota_ratio: number;
+  total_video_volume_mb: number;
+  total_pic_volume_mb: number;
+  free_video_quota_mb: number;
+  free_pic_quota_mb: number;
+}
+
 export interface PTZPreset {
   id: number;
   name: string;
@@ -358,6 +369,8 @@ export interface CameraCapabilities {
   has_line_detection: boolean;
   has_intrusion_detection: boolean;
   has_tamper_detection: boolean;
+  has_scene_change_detection?: boolean;
+  has_face_detection?: boolean;
   has_privacy_mask?: boolean;
   has_unattended_baggage?: boolean;
   has_object_removal?: boolean;
@@ -366,9 +379,90 @@ export interface CameraCapabilities {
   has_target_detection?: boolean;
   has_polygon_motion?: boolean;
   has_storage: boolean;
+  has_record_schedule?: boolean;
+  has_capture?: boolean;
   has_ptz: boolean;
   supported_codecs: string[];
   supported_resolutions: string[];
+}
+
+export interface SceneChangeDetection {
+  enabled: boolean;
+  sensitivity: number; // 1-100
+}
+
+export interface FaceDetection {
+  enabled: boolean;
+  sensitivity: number; // 1-5
+  enable_highlight: boolean;
+}
+
+export interface ScheduleTimeRange {
+  begin_time: string; // "00:00"
+  end_time: string;   // "24:00"
+}
+
+export interface DailySchedule {
+  day_of_week: number; // 1=Monday..7=Sunday
+  time_ranges: ScheduleTimeRange[];
+}
+
+export interface EventSchedule {
+  event_type: string;
+  days: DailySchedule[];
+}
+
+export interface EventLinkage {
+  event_type: string;
+  notify_surveillance_center: boolean;
+  send_email: boolean;
+  upload_ftp: boolean;
+  audible_warning: boolean;
+  trigger_channel_record: boolean;
+  trigger_alarm_output: boolean;
+}
+
+export interface RecordTimeRange {
+  begin_time: string;  // "00:00:00"
+  end_time: string;    // "24:00:00"
+  record_mode: string; // "CMR" or "AllEvent"
+}
+
+export interface RecordScheduleDay {
+  day_of_week: number;
+  time_ranges: RecordTimeRange[];
+}
+
+export interface RecordSchedule {
+  track_id: number;
+  enabled: boolean;
+  enable_schedule: boolean;
+  pre_record_time_seconds: number;
+  post_record_time_seconds: number;
+  days: RecordScheduleDay[];
+  supported_record_modes?: string[];
+}
+
+export interface TimingCaptureConfig {
+  enabled: boolean;
+  resolution: string;
+  quality: number;
+  interval_ms: number;
+}
+
+export interface EventCaptureConfig {
+  enabled: boolean;
+  resolution: string;
+  quality: number;
+  interval_ms: number;
+  capture_count: number;
+}
+
+export interface CaptureSettings {
+  channel_id: number;
+  timing_capture: TimingCaptureConfig;
+  event_capture: EventCaptureConfig;
+  schedule?: RecordSchedule;
 }
 
 export type Point = { x: number; y: number };
@@ -376,3 +470,4 @@ export type UnattendedBaggageDetection = UnattendedBaggage;
 export type ObjectRemovalDetection = ObjectRemoval;
 export type StorageDevice = HddInfo;
 export type StreamChannel = StreamSettings;
+

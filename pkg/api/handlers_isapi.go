@@ -685,6 +685,48 @@ func (h *ISAPIHandler) FormatStorage(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]interface{}{"success": true, "message": fmt.Sprintf("Storage volume %d format command initiated", hddID)})
 }
 
+// GetStorageQuota returns storage quota split between video recordings and picture snapshots.
+func (h *ISAPIHandler) GetStorageQuota(w http.ResponseWriter, r *http.Request) {
+	cam, err := h.getCamera(r)
+	if err != nil {
+		writeJSONError(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+
+	quota, err := h.camClient.GetStorageQuota(cam.IP, cam.Username, cam.Password)
+	if err != nil {
+		writeJSONError(w, fmt.Sprintf("Failed to get storage quota: %v", err), http.StatusBadGateway)
+		return
+	}
+
+	writeJSON(w, http.StatusOK, quota)
+}
+
+// SetStorageQuota updates storage quota split between video recordings and picture snapshots.
+func (h *ISAPIHandler) SetStorageQuota(w http.ResponseWriter, r *http.Request) {
+	cam, err := h.getCamera(r)
+	if err != nil {
+		writeJSONError(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+
+	var req struct {
+		VideoQuotaRatio   int `json:"video_quota_ratio"`
+		PictureQuotaRatio int `json:"picture_quota_ratio"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeJSONError(w, "Invalid request body", http.StatusBadRequest)
+		return
+	}
+
+	if err := h.camClient.SetStorageQuota(cam.IP, cam.Username, cam.Password, req.VideoQuotaRatio, req.PictureQuotaRatio); err != nil {
+		writeJSONError(w, fmt.Sprintf("Failed to set storage quota: %v", err), http.StatusBadGateway)
+		return
+	}
+
+	writeJSON(w, http.StatusOK, map[string]interface{}{"success": true, "message": "Storage quota updated successfully"})
+}
+
 // Reboot sends a reboot signal to the camera hardware.
 func (h *ISAPIHandler) Reboot(w http.ResponseWriter, r *http.Request) {
 	cam, err := h.getCamera(r)
@@ -803,3 +845,276 @@ func (h *ISAPIHandler) Proxy(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(statusCode)
 	_, _ = w.Write(data)
 }
+
+// GetSceneChangeDetection returns Scene Change detection configuration.
+func (h *ISAPIHandler) GetSceneChangeDetection(w http.ResponseWriter, r *http.Request) {
+	cam, err := h.getCamera(r)
+	if err != nil {
+		writeJSONError(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+
+	sc, err := h.camClient.GetSceneChangeDetection(cam.IP, cam.Username, cam.Password, 1)
+	if err != nil {
+		writeJSONError(w, "Failed to get scene change detection: "+err.Error(), http.StatusBadGateway)
+		return
+	}
+
+	writeJSON(w, http.StatusOK, sc)
+}
+
+// SetSceneChangeDetection updates Scene Change detection configuration.
+func (h *ISAPIHandler) SetSceneChangeDetection(w http.ResponseWriter, r *http.Request) {
+	cam, err := h.getCamera(r)
+	if err != nil {
+		writeJSONError(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+
+	var req hikvision.SceneChangeDetection
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeJSONError(w, "Invalid request body", http.StatusBadRequest)
+		return
+	}
+
+	if err := h.camClient.SetSceneChangeDetection(cam.IP, cam.Username, cam.Password, 1, req); err != nil {
+		writeJSONError(w, "Failed to set scene change detection: "+err.Error(), http.StatusBadGateway)
+		return
+	}
+
+	writeJSON(w, http.StatusOK, map[string]interface{}{"success": true, "message": "Scene change detection settings updated"})
+}
+
+// GetFaceDetection returns Face Detection configuration.
+func (h *ISAPIHandler) GetFaceDetection(w http.ResponseWriter, r *http.Request) {
+	cam, err := h.getCamera(r)
+	if err != nil {
+		writeJSONError(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+
+	fd, err := h.camClient.GetFaceDetection(cam.IP, cam.Username, cam.Password, 1)
+	if err != nil {
+		writeJSONError(w, "Failed to get face detection: "+err.Error(), http.StatusBadGateway)
+		return
+	}
+
+	writeJSON(w, http.StatusOK, fd)
+}
+
+// SetFaceDetection updates Face Detection configuration.
+func (h *ISAPIHandler) SetFaceDetection(w http.ResponseWriter, r *http.Request) {
+	cam, err := h.getCamera(r)
+	if err != nil {
+		writeJSONError(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+
+	var req hikvision.FaceDetection
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeJSONError(w, "Invalid request body", http.StatusBadRequest)
+		return
+	}
+
+	if err := h.camClient.SetFaceDetection(cam.IP, cam.Username, cam.Password, 1, req); err != nil {
+		writeJSONError(w, "Failed to set face detection: "+err.Error(), http.StatusBadGateway)
+		return
+	}
+
+	writeJSON(w, http.StatusOK, map[string]interface{}{"success": true, "message": "Face detection settings updated"})
+}
+
+// GetEventSchedule returns the arming schedule for a specific event type.
+func (h *ISAPIHandler) GetEventSchedule(w http.ResponseWriter, r *http.Request) {
+	cam, err := h.getCamera(r)
+	if err != nil {
+		writeJSONError(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+
+	eventType := chi.URLParam(r, "eventType")
+	if eventType == "" {
+		writeJSONError(w, "eventType parameter is required", http.StatusBadRequest)
+		return
+	}
+
+	sched, err := h.camClient.GetEventSchedule(cam.IP, cam.Username, cam.Password, eventType, 1)
+	if err != nil {
+		writeJSONError(w, "Failed to get event schedule: "+err.Error(), http.StatusBadGateway)
+		return
+	}
+
+	writeJSON(w, http.StatusOK, sched)
+}
+
+// SetEventSchedule updates the arming schedule for a specific event type.
+func (h *ISAPIHandler) SetEventSchedule(w http.ResponseWriter, r *http.Request) {
+	cam, err := h.getCamera(r)
+	if err != nil {
+		writeJSONError(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+
+	eventType := chi.URLParam(r, "eventType")
+	if eventType == "" {
+		writeJSONError(w, "eventType parameter is required", http.StatusBadRequest)
+		return
+	}
+
+	var req hikvision.EventSchedule
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeJSONError(w, "Invalid request body", http.StatusBadRequest)
+		return
+	}
+
+	if err := h.camClient.SetEventSchedule(cam.IP, cam.Username, cam.Password, eventType, 1, req); err != nil {
+		writeJSONError(w, "Failed to set event schedule: "+err.Error(), http.StatusBadGateway)
+		return
+	}
+
+	writeJSON(w, http.StatusOK, map[string]interface{}{"success": true, "message": "Event arming schedule updated"})
+}
+
+// GetEventLinkage returns the linkage and notification methods for a specific event type.
+func (h *ISAPIHandler) GetEventLinkage(w http.ResponseWriter, r *http.Request) {
+	cam, err := h.getCamera(r)
+	if err != nil {
+		writeJSONError(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+
+	eventType := chi.URLParam(r, "eventType")
+	if eventType == "" {
+		writeJSONError(w, "eventType parameter is required", http.StatusBadRequest)
+		return
+	}
+
+	linkage, err := h.camClient.GetEventLinkage(cam.IP, cam.Username, cam.Password, eventType, 1)
+	if err != nil {
+		writeJSONError(w, "Failed to get event linkage: "+err.Error(), http.StatusBadGateway)
+		return
+	}
+
+	writeJSON(w, http.StatusOK, linkage)
+}
+
+// SetEventLinkage updates the linkage and notification methods for a specific event type.
+func (h *ISAPIHandler) SetEventLinkage(w http.ResponseWriter, r *http.Request) {
+	cam, err := h.getCamera(r)
+	if err != nil {
+		writeJSONError(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+
+	eventType := chi.URLParam(r, "eventType")
+	if eventType == "" {
+		writeJSONError(w, "eventType parameter is required", http.StatusBadRequest)
+		return
+	}
+
+	var req hikvision.EventLinkage
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeJSONError(w, "Invalid request body", http.StatusBadRequest)
+		return
+	}
+
+	if err := h.camClient.SetEventLinkage(cam.IP, cam.Username, cam.Password, eventType, 1, req); err != nil {
+		writeJSONError(w, "Failed to set event linkage: "+err.Error(), http.StatusBadGateway)
+		return
+	}
+
+	writeJSON(w, http.StatusOK, map[string]interface{}{"success": true, "message": "Event linkage method updated"})
+}
+
+// GetRecordSchedule returns the storage recording schedule for Track 1.
+func (h *ISAPIHandler) GetRecordSchedule(w http.ResponseWriter, r *http.Request) {
+	cam, err := h.getCamera(r)
+	if err != nil {
+		writeJSONError(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+
+	trackID := 1
+	if tStr := r.URL.Query().Get("track"); tStr != "" {
+		if t, err := strconv.Atoi(tStr); err == nil && t > 0 {
+			trackID = t
+		}
+	}
+
+	sched, err := h.camClient.GetRecordSchedule(cam.IP, cam.Username, cam.Password, trackID)
+	if err != nil {
+		writeJSONError(w, "Failed to get record schedule: "+err.Error(), http.StatusBadGateway)
+		return
+	}
+
+	writeJSON(w, http.StatusOK, sched)
+}
+
+// SetRecordSchedule updates the storage recording schedule for Track 1.
+func (h *ISAPIHandler) SetRecordSchedule(w http.ResponseWriter, r *http.Request) {
+	cam, err := h.getCamera(r)
+	if err != nil {
+		writeJSONError(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+
+	trackID := 1
+	if tStr := r.URL.Query().Get("track"); tStr != "" {
+		if t, err := strconv.Atoi(tStr); err == nil && t > 0 {
+			trackID = t
+		}
+	}
+
+	var req hikvision.RecordSchedule
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeJSONError(w, "Invalid request body", http.StatusBadRequest)
+		return
+	}
+
+	if err := h.camClient.SetRecordSchedule(cam.IP, cam.Username, cam.Password, trackID, req); err != nil {
+		writeJSONError(w, "Failed to set record schedule: "+err.Error(), http.StatusBadGateway)
+		return
+	}
+
+	writeJSON(w, http.StatusOK, map[string]interface{}{"success": true, "message": "Record schedule updated"})
+}
+
+// GetCaptureSettings returns snapshot capture configuration and schedule.
+func (h *ISAPIHandler) GetCaptureSettings(w http.ResponseWriter, r *http.Request) {
+	cam, err := h.getCamera(r)
+	if err != nil {
+		writeJSONError(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+
+	capt, err := h.camClient.GetCaptureSettings(cam.IP, cam.Username, cam.Password, 1)
+	if err != nil {
+		writeJSONError(w, "Failed to get capture settings: "+err.Error(), http.StatusBadGateway)
+		return
+	}
+
+	writeJSON(w, http.StatusOK, capt)
+}
+
+// SetCaptureSettings updates snapshot capture configuration and schedule.
+func (h *ISAPIHandler) SetCaptureSettings(w http.ResponseWriter, r *http.Request) {
+	cam, err := h.getCamera(r)
+	if err != nil {
+		writeJSONError(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+
+	var req hikvision.CaptureSettings
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeJSONError(w, "Invalid request body", http.StatusBadRequest)
+		return
+	}
+
+	if err := h.camClient.SetCaptureSettings(cam.IP, cam.Username, cam.Password, 1, req); err != nil {
+		writeJSONError(w, "Failed to set capture settings: "+err.Error(), http.StatusBadGateway)
+		return
+	}
+
+	writeJSON(w, http.StatusOK, map[string]interface{}{"success": true, "message": "Capture settings updated"})
+}
+

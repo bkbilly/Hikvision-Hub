@@ -70,18 +70,8 @@ export const CameraSettingsModal: React.FC<CameraSettingsModalProps> = ({
   const [isSyncingTime, setIsSyncingTime] = useState<boolean>(false);
   const [timeMode, setTimeMode] = useState<'manual' | 'NTP'>('manual');
 
-  const refreshCameraTime = useCallback(async () => {
-    if (!camera) return;
-    try {
-      const res = await api.getCameraTime(camera.id);
-      setDeviceTime(res);
-      setDeviceTimeFetchedAt(Date.now());
-      if (res.time_mode === 'NTP') setTimeMode('NTP');
-      else setTimeMode('manual');
-    } catch (err) {
-      console.warn('time refresh error', err);
-    }
-  }, [camera]);
+  const cameraRef = useRef(camera);
+  cameraRef.current = camera;
 
   // Image Settings
   const [imageSettings, setImageSettings] = useState<ImageSettings | null>(null);
@@ -100,10 +90,8 @@ export const CameraSettingsModal: React.FC<CameraSettingsModalProps> = ({
   // PTZ
   const [ptzPresets, setPtzPresets] = useState<PTZPreset[]>([]);
 
-  // Events tab & Privacy tab refresh ref & key
+  // Refresh Key for sub-components
   const [refreshKey, setRefreshKey] = useState<number>(Date.now());
-  const eventsRefreshRef = useRef<(() => Promise<void>) | null>(null);
-  const privacyRefreshRef = useRef<(() => Promise<void>) | null>(null);
 
   // Raw ISAPI Console
   const [rawPath, setRawPath] = useState<string>('/ISAPI/System/deviceInfo');
@@ -112,112 +100,183 @@ export const CameraSettingsModal: React.FC<CameraSettingsModalProps> = ({
   const [rawResult, setRawResult] = useState<string>('');
   const [rawLoading, setRawLoading] = useState<boolean>(false);
 
-  useEffect(() => {
-    if (isOpen && camera) {
-      loadAllCameraData();
-    } else {
-      setSaveStatus(null);
-    }
-  }, [isOpen, camera]);
+  // Track visited tabs to keep them mounted with hidden/block
+  const [visitedTabs, setVisitedTabs] = useState<Set<TabType>>(() => new Set(['device']));
+  const loadedTabsRef = useRef<Set<TabType>>(new Set());
+  const prevCameraIdRef = useRef<number | null>(null);
+  const wasOpenRef = useRef<boolean>(false);
 
-  const refreshPreview = () => {
+  // Child refresh refs
+  const eventsRefreshRef = useRef<(() => Promise<void>) | null>(null);
+  const privacyRefreshRef = useRef<(() => Promise<void>) | null>(null);
+  const storageRefreshRef = useRef<(() => Promise<void>) | null>(null);
+
+  const refreshPreview = useCallback(() => {
     setSnapshotKey(Date.now());
-  };
+  }, []);
 
-  const loadAllCameraData = async () => {
-    if (!camera) return;
+  const refreshCameraTime = useCallback(async () => {
+    const cam = cameraRef.current;
+    if (!cam) return;
+    try {
+      const res = await api.getCameraTime(cam.id);
+      setDeviceTime(res);
+      setDeviceTimeFetchedAt(Date.now());
+      if (res.time_mode === 'NTP') setTimeMode('NTP');
+      else setTimeMode('manual');
+    } catch (err) {
+      console.warn('time refresh error', err);
+    }
+  }, []);
+
+  const handleRefreshStorage = useCallback(async () => {
+    const cam = cameraRef.current;
+    if (!cam) return;
+    setIsRefreshingStorage(true);
+    try {
+      const list = await api.getCameraStorage(cam.id);
+      setStorageList(list || []);
+    } catch (err: any) {
+      console.warn('Storage refresh error', err);
+    } finally {
+      setIsRefreshingStorage(false);
+    }
+  }, []);
+
+  const loadCurrentTabData = useCallback(async (tab: TabType, isExplicitRefresh: boolean = false) => {
+    const cam = cameraRef.current;
+    if (!cam) return;
     setIsLoading(true);
     setSaveStatus(null);
 
-    // Refresh preview snapshot timestamp for image/events tabs
-    refreshPreview();
-    const newRefreshKey = Date.now();
-    setRefreshKey(newRefreshKey);
-
-    const promises: Promise<any>[] = [
-      // 1. Probe Capabilities
-      api.getCameraCapabilities(camera.id)
-        .then((caps) => { if (caps) setCapabilities(caps); })
-        .catch((err) => console.warn('capabilities error', err)),
-
-      // 2. Fetch Device Info
-      api.getCameraDeviceInfo(camera.id)
-        .then((res) => setDeviceInfo(res))
-        .catch((err) => console.warn('device info error', err)),
-
-      // 3. Fetch Time & NTP
-      api.getCameraTime(camera.id)
-        .then((res) => {
-          setDeviceTime(res);
-          setDeviceTimeFetchedAt(Date.now());
-          if (res.time_mode === 'NTP') setTimeMode('NTP');
-          else setTimeMode('manual');
-        })
-        .catch((err) => console.warn('time error', err)),
-
-      api.getCameraNTP(camera.id)
-        .then((res) => setNtpServer(res))
-        .catch((err) => console.warn('ntp error', err)),
-
-      // 4. Fetch Image Settings
-      api.getCameraImage(camera.id)
-        .then((res) => setImageSettings(res))
-        .catch((err) => {
-          console.warn('image error', err);
-          setImageSettings((prev) => prev || {
-            channel_id: 1,
-            brightness: 50,
-            contrast: 50,
-            saturation: 50,
-            sharpness: 50,
-            ircut_filter_type: 'auto',
-            wdr_mode: 'close',
-            wdr_level: 50,
-            image_flip_style: 'OFF',
-            white_balance: 'auto',
-            noise_reduce_level: 50,
-            exposure_mode: 'auto',
-          });
-        }),
-
-      // 5. Fetch Streams
-      api.getCameraStream(camera.id, 101)
-        .then((res) => setMainStream(res))
-        .catch((err) => console.warn('stream 101 error', err)),
-
-      api.getCameraStream(camera.id, 102)
-        .then((res) => setSubStream(res))
-        .catch((err) => console.warn('stream 102 error', err)),
-
-      // 6. Fetch Storage
-      api.getCameraStorage(camera.id)
-        .then((res) => setStorageList(res || []))
-        .catch(() => setStorageList([])),
-
-      // 7. Fetch PTZ presets if supported
-      api.getPTZPresets(camera.id)
-        .then((res) => setPtzPresets(res || []))
-        .catch(() => setPtzPresets([])),
-    ];
-
-    // 8. If Events tab is currently mounted, also trigger and await its refresh!
-    if (eventsRefreshRef.current) {
-      promises.push(eventsRefreshRef.current().catch((err) => console.warn('events refresh error', err)));
-    }
-
-    // 9. If Privacy Mask tab is currently mounted, also trigger and await its refresh!
-    if (privacyRefreshRef.current) {
-      promises.push(privacyRefreshRef.current().catch((err) => console.warn('privacy refresh error', err)));
-    }
-
     try {
-      await Promise.allSettled(promises);
-    } catch (err: any) {
-      console.error('Failed to load camera configuration', err);
+      switch (tab) {
+        case 'device':
+          await api.getCameraDeviceInfo(cam.id)
+            .then(setDeviceInfo)
+            .catch((err) => console.warn('device info error', err));
+          break;
+
+        case 'time':
+          await Promise.allSettled([
+            api.getCameraTime(cam.id).then((res) => {
+              setDeviceTime(res);
+              setDeviceTimeFetchedAt(Date.now());
+              if (res.time_mode === 'NTP') setTimeMode('NTP');
+              else setTimeMode('manual');
+            }).catch((err) => console.warn('time error', err)),
+            api.getCameraNTP(cam.id).then(setNtpServer).catch((err) => console.warn('ntp error', err)),
+          ]);
+          break;
+
+        case 'image':
+          refreshPreview();
+          await api.getCameraImage(cam.id)
+            .then(setImageSettings)
+            .catch((err) => {
+              console.warn('image error', err);
+              setImageSettings((prev) => prev || {
+                channel_id: 1,
+                brightness: 50,
+                contrast: 50,
+                saturation: 50,
+                sharpness: 50,
+                ircut_filter_type: 'auto',
+                wdr_mode: 'close',
+                wdr_level: 50,
+                image_flip_style: 'OFF',
+                white_balance: 'auto',
+                noise_reduce_level: 50,
+                exposure_mode: 'auto',
+              });
+            });
+          if (privacyRefreshRef.current) {
+            await privacyRefreshRef.current().catch((err) => console.warn('privacy refresh error', err));
+          }
+          break;
+
+        case 'video':
+          await Promise.allSettled([
+            api.getCameraStream(cam.id, 101).then(setMainStream).catch((err) => console.warn('stream 101 error', err)),
+            api.getCameraStream(cam.id, 102).then(setSubStream).catch((err) => console.warn('stream 102 error', err)),
+          ]);
+          break;
+
+        case 'events':
+          if (isExplicitRefresh) {
+            refreshPreview();
+            setRefreshKey(Date.now());
+            if (eventsRefreshRef.current) {
+              await eventsRefreshRef.current().catch((err) => console.warn('events refresh error', err));
+            }
+          }
+          break;
+
+        case 'storage':
+          if (isExplicitRefresh) {
+            setRefreshKey(Date.now());
+            if (storageRefreshRef.current) {
+              await storageRefreshRef.current().catch((err) => console.warn('storage refresh error', err));
+            } else {
+              await handleRefreshStorage();
+            }
+          } else {
+            await api.getCameraStorage(cam.id)
+              .then((res) => setStorageList(res || []))
+              .catch(() => setStorageList([]));
+          }
+          break;
+
+        case 'ptz':
+          await api.getPTZPresets(cam.id)
+            .then((res) => setPtzPresets(res || []))
+            .catch(() => setPtzPresets([]));
+          break;
+
+        case 'raw':
+          break;
+      }
     } finally {
       setIsLoading(false);
     }
-  };
+  }, [handleRefreshStorage, refreshPreview]);
+
+  // When activeTab changes: record as visited
+  useEffect(() => {
+    setVisitedTabs((prev) => {
+      if (prev.has(activeTab)) return prev;
+      const next = new Set(prev);
+      next.add(activeTab);
+      return next;
+    });
+  }, [activeTab]);
+
+  // When modal opens or camera changes: reset state if new camera, probe capabilities, and load tab once
+  useEffect(() => {
+    if (!isOpen || !camera) {
+      wasOpenRef.current = false;
+      return;
+    }
+
+    const isNewCamera = camera.id !== prevCameraIdRef.current;
+    const isJustOpened = !wasOpenRef.current;
+    wasOpenRef.current = true;
+    prevCameraIdRef.current = camera.id;
+
+    if (isNewCamera || isJustOpened) {
+      loadedTabsRef.current.clear();
+      setVisitedTabs(new Set([activeTab]));
+      setSaveStatus(null);
+      api.getCameraCapabilities(camera.id)
+        .then((caps) => { if (caps) setCapabilities(caps); })
+        .catch((err) => console.warn('capabilities error', err));
+    }
+
+    if (!loadedTabsRef.current.has(activeTab)) {
+      loadedTabsRef.current.add(activeTab);
+      loadCurrentTabData(activeTab, false);
+    }
+  }, [isOpen, camera?.id, activeTab, loadCurrentTabData]);
 
   // Handlers for Save Operations
   const handleSyncTime = async () => {
@@ -361,7 +420,9 @@ export const CameraSettingsModal: React.FC<CameraSettingsModalProps> = ({
     try {
       const res = await api.formatCameraStorage(camera.id, hddId);
       setSaveStatus({ success: true, message: res.message || 'Format initiated successfully' });
-      setTimeout(handleRefreshStorage, 3000);
+      handleRefreshStorage();
+      setTimeout(handleRefreshStorage, 2500);
+      setTimeout(handleRefreshStorage, 6000);
     } catch (err: any) {
       setSaveStatus({ success: false, message: err.message || 'Format failed' });
     } finally {
@@ -369,18 +430,17 @@ export const CameraSettingsModal: React.FC<CameraSettingsModalProps> = ({
     }
   };
 
-  const handleRefreshStorage = async () => {
-    if (!camera) return;
-    setIsRefreshingStorage(true);
-    try {
-      const list = await api.getCameraStorage(camera.id);
-      setStorageList(list || []);
-    } catch (err: any) {
-      console.warn('Storage refresh error', err);
-    } finally {
-      setIsRefreshingStorage(false);
-    }
-  };
+  const handleRegisterEventsRefresh = useCallback((fn: () => Promise<void>) => {
+    eventsRefreshRef.current = fn;
+  }, []);
+
+  const handleRegisterPrivacyRefresh = useCallback((fn: () => Promise<void>) => {
+    privacyRefreshRef.current = fn;
+  }, []);
+
+  const handleRegisterStorageRefresh = useCallback((fn: () => Promise<void>) => {
+    storageRefreshRef.current = fn;
+  }, []);
 
   const handlePTZMove = async (pan: number, tilt: number, zoom: number) => {
     if (!camera) return;
@@ -445,10 +505,11 @@ export const CameraSettingsModal: React.FC<CameraSettingsModalProps> = ({
 
             <div className="flex items-center gap-2">
               <button
-                onClick={loadAllCameraData}
+                type="button"
+                onClick={() => loadCurrentTabData(activeTab, true)}
                 disabled={isLoading}
-                title="Refresh Camera Configuration"
-                className="p-2 rounded-lg text-slate-400 hover:text-white hover:bg-slate-800 transition-colors cursor-pointer"
+                title="Refresh Current Section"
+                className="p-2 rounded-lg text-slate-400 hover:text-white hover:bg-slate-800 transition-colors cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
               >
                 <RefreshCw className={`w-4 h-4 ${isLoading ? 'animate-spin text-blue-400' : ''}`} />
               </button>
@@ -585,104 +646,121 @@ export const CameraSettingsModal: React.FC<CameraSettingsModalProps> = ({
 
             {/* Active Tab Body */}
             <div className="flex-1 min-h-0 p-4 sm:p-6 overflow-y-auto">
-              {activeTab === 'device' && (
-                <DeviceTab
-                  camera={camera}
-                  deviceInfo={deviceInfo}
-                  isRebooting={isRebooting}
-                  onReboot={handleReboot}
-                />
+              {visitedTabs.has('device') && (
+                <div className={activeTab === 'device' ? 'block' : 'hidden'}>
+                  <DeviceTab
+                    camera={camera}
+                    deviceInfo={deviceInfo}
+                    isRebooting={isRebooting}
+                    onReboot={handleReboot}
+                  />
+                </div>
               )}
 
-              {activeTab === 'time' && (
-                <TimeTab
-                  deviceTime={deviceTime}
-                  deviceTimeFetchedAt={deviceTimeFetchedAt}
-                  ntpServer={ntpServer}
-                  setNtpServer={setNtpServer}
-                  timeMode={timeMode}
-                  onSwitchTimeMode={handleSwitchTimeMode}
-                  isSyncingTime={isSyncingTime}
-                  onSyncTime={handleSyncTime}
-                  onSaveNTP={handleSaveNTP}
-                  onRefreshTime={refreshCameraTime}
-                />
+              {visitedTabs.has('time') && (
+                <div className={activeTab === 'time' ? 'block' : 'hidden'}>
+                  <TimeTab
+                    deviceTime={deviceTime}
+                    deviceTimeFetchedAt={deviceTimeFetchedAt}
+                    ntpServer={ntpServer}
+                    setNtpServer={setNtpServer}
+                    timeMode={timeMode}
+                    onSwitchTimeMode={handleSwitchTimeMode}
+                    isSyncingTime={isSyncingTime}
+                    onSyncTime={handleSyncTime}
+                    onSaveNTP={handleSaveNTP}
+                    onRefreshTime={refreshCameraTime}
+                  />
+                </div>
               )}
 
-              {activeTab === 'image' && (
-                <ImageTab
-                  camera={camera}
-                  snapshotKey={snapshotKey}
-                  refreshKey={refreshKey}
-                  imageSettings={imageSettings}
-                  setImageSettings={setImageSettings}
-                  onRefreshPreview={refreshPreview}
-                  onSaveImage={handleSaveImage}
-                  isSaving={isSavingImage}
-                  capabilities={capabilities}
-                  setSaveStatus={setSaveStatus}
-                  onRegisterPrivacyRefresh={(refreshFn) => {
-                    privacyRefreshRef.current = refreshFn;
-                  }}
-                />
+              {visitedTabs.has('image') && (
+                <div className={activeTab === 'image' ? 'block' : 'hidden'}>
+                  <ImageTab
+                    camera={camera}
+                    snapshotKey={snapshotKey}
+                    refreshKey={refreshKey}
+                    imageSettings={imageSettings}
+                    setImageSettings={setImageSettings}
+                    onRefreshPreview={refreshPreview}
+                    onSaveImage={handleSaveImage}
+                    isSaving={isSavingImage}
+                    capabilities={capabilities}
+                    setSaveStatus={setSaveStatus}
+                    onRegisterPrivacyRefresh={handleRegisterPrivacyRefresh}
+                  />
+                </div>
               )}
 
-              {activeTab === 'events' && (
-                <EventsTab
-                  camera={camera}
-                  capabilities={capabilities}
-                  setSaveStatus={setSaveStatus}
-                  refreshKey={refreshKey}
-                  onRegisterRefresh={(refreshFn) => {
-                    eventsRefreshRef.current = refreshFn;
-                  }}
-                  snapshotKey={snapshotKey}
-                  onRefreshPreview={refreshPreview}
-                />
+              {visitedTabs.has('events') && (
+                <div className={activeTab === 'events' ? 'block' : 'hidden'}>
+                  <EventsTab
+                    camera={camera}
+                    capabilities={capabilities}
+                    setSaveStatus={setSaveStatus}
+                    refreshKey={refreshKey}
+                    onRegisterRefresh={handleRegisterEventsRefresh}
+                    snapshotKey={snapshotKey}
+                    onRefreshPreview={refreshPreview}
+                  />
+                </div>
               )}
 
-              {activeTab === 'video' && (
-                <VideoTab
-                  streamChannel={streamChannel}
-                  setStreamChannel={setStreamChannel}
-                  mainStream={mainStream}
-                  setMainStream={setMainStream}
-                  subStream={subStream}
-                  setSubStream={setSubStream}
-                  onSaveStream={handleSaveStream}
-                />
+              {visitedTabs.has('video') && (
+                <div className={activeTab === 'video' ? 'block' : 'hidden'}>
+                  <VideoTab
+                    streamChannel={streamChannel}
+                    setStreamChannel={setStreamChannel}
+                    mainStream={mainStream}
+                    setMainStream={setMainStream}
+                    subStream={subStream}
+                    setSubStream={setSubStream}
+                    onSaveStream={handleSaveStream}
+                  />
+                </div>
               )}
 
-              {activeTab === 'storage' && (
-                <StorageTab
-                  storageList={storageList}
-                  isRefreshingStorage={isRefreshingStorage}
-                  onRefreshStorage={handleRefreshStorage}
-                  formattingId={formattingId}
-                  onFormatStorage={handleExecuteFormat}
-                />
+              {visitedTabs.has('storage') && (
+                <div className={activeTab === 'storage' ? 'block' : 'hidden'}>
+                  <StorageTab
+                    cameraId={camera.id}
+                    storageList={storageList}
+                    isRefreshingStorage={isRefreshingStorage}
+                    onRefreshStorage={handleRefreshStorage}
+                    formattingId={formattingId}
+                    onFormatStorage={handleExecuteFormat}
+                    capabilities={capabilities}
+                    setSaveStatus={setSaveStatus}
+                    refreshKey={refreshKey}
+                    onRegisterStorageRefresh={handleRegisterStorageRefresh}
+                  />
+                </div>
               )}
 
-              {activeTab === 'ptz' && (
-                <PtzTab
-                  ptzPresets={ptzPresets}
-                  onPTZMove={handlePTZMove}
-                  onPTZGoto={handlePTZGoto}
-                />
+              {visitedTabs.has('ptz') && (
+                <div className={activeTab === 'ptz' ? 'block' : 'hidden'}>
+                  <PtzTab
+                    ptzPresets={ptzPresets}
+                    onPTZMove={handlePTZMove}
+                    onPTZGoto={handlePTZGoto}
+                  />
+                </div>
               )}
 
-              {activeTab === 'raw' && (
-                <RawIsapiTab
-                  rawMethod={rawMethod}
-                  setRawMethod={setRawMethod}
-                  rawPath={rawPath}
-                  setRawPath={setRawPath}
-                  rawBody={rawBody}
-                  setRawBody={setRawBody}
-                  rawResult={rawResult}
-                  rawLoading={rawLoading}
-                  onExecuteRaw={handleExecuteRaw}
-                />
+              {visitedTabs.has('raw') && (
+                <div className={activeTab === 'raw' ? 'block' : 'hidden'}>
+                  <RawIsapiTab
+                    rawMethod={rawMethod}
+                    setRawMethod={setRawMethod}
+                    rawPath={rawPath}
+                    setRawPath={setRawPath}
+                    rawBody={rawBody}
+                    setRawBody={setRawBody}
+                    rawResult={rawResult}
+                    rawLoading={rawLoading}
+                    onExecuteRaw={handleExecuteRaw}
+                  />
+                </div>
               )}
             </div>
           </div>

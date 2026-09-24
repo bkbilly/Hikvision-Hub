@@ -1196,3 +1196,116 @@ func (c *CameraClient) setSmartCalibration(ip, username, password string, channe
 	}
 	return nil
 }
+
+// GetSceneChangeDetection retrieves scene change detection configuration.
+func (c *CameraClient) GetSceneChangeDetection(ip, username, password string, channelID int) (*SceneChangeDetection, error) {
+	if channelID <= 0 {
+		channelID = 1
+	}
+	path := fmt.Sprintf("/ISAPI/Smart/SceneChangeDetection/%d", channelID)
+	data, code, _, err := c.DoRequest(ip, username, password, "GET", path, nil, "")
+	if err != nil || code != http.StatusOK {
+		return nil, fmt.Errorf("scene change detection query failed with status %d", code)
+	}
+
+	str := string(data)
+	enabled := extractXMLTag(str, "enabled") == "true"
+	sens := parseXMLIntAny(str, 50, "sensitivityLevel", "sensitivity")
+
+	return &SceneChangeDetection{
+		Enabled:     enabled,
+		Sensitivity: sens,
+	}, nil
+}
+
+// SetSceneChangeDetection updates scene change detection configuration.
+func (c *CameraClient) SetSceneChangeDetection(ip, username, password string, channelID int, sc SceneChangeDetection) error {
+	if channelID <= 0 {
+		channelID = 1
+	}
+	if sc.Sensitivity <= 0 {
+		sc.Sensitivity = 50
+	} else if sc.Sensitivity > 100 {
+		sc.Sensitivity = 100
+	}
+
+	payload := fmt.Sprintf(`<?xml version="1.0" encoding="UTF-8"?>
+<SceneChangeDetection version="2.0" xmlns="http://www.hikvision.com/ver20/XMLSchema">
+  <enabled>%t</enabled>
+  <id>%d</id>
+  <SceneChangeDetectionAreaList>
+    <SceneChangeDetectionArea>
+      <id>1</id>
+      <sensitivityLevel>%d</sensitivityLevel>
+    </SceneChangeDetectionArea>
+  </SceneChangeDetectionAreaList>
+</SceneChangeDetection>`, sc.Enabled, channelID, sc.Sensitivity)
+
+	path := fmt.Sprintf("/ISAPI/Smart/SceneChangeDetection/%d", channelID)
+	data, code, _, err := c.DoRequest(ip, username, password, "PUT", path, []byte(payload), "application/xml")
+	if err != nil {
+		return err
+	}
+	if code != http.StatusOK && code != http.StatusAccepted && code != http.StatusNoContent {
+		return fmt.Errorf("failed to set scene change detection: status %d (resp: %s)", code, string(data))
+	}
+	return nil
+}
+
+// GetFaceDetection retrieves face detection configuration.
+func (c *CameraClient) GetFaceDetection(ip, username, password string, channelID int) (*FaceDetection, error) {
+	if channelID <= 0 {
+		channelID = 1
+	}
+	path := fmt.Sprintf("/ISAPI/Smart/FaceDetect/%d", channelID)
+	data, code, _, err := c.DoRequest(ip, username, password, "GET", path, nil, "")
+	if err != nil || code != http.StatusOK {
+		return nil, fmt.Errorf("face detection query failed with status %d", code)
+	}
+
+	str := string(data)
+	enabled := extractXMLTag(str, "enabled") == "true"
+	sens := parseXMLIntAny(str, 4, "sensitivityLevel", "sensitivity")
+	highlight := extractXMLTag(str, "highlightsenabled") == "true"
+
+	return &FaceDetection{
+		Enabled:         enabled,
+		Sensitivity:     sens,
+		EnableHighlight: highlight,
+	}, nil
+}
+
+// SetFaceDetection updates face detection configuration.
+func (c *CameraClient) SetFaceDetection(ip, username, password string, channelID int, fd FaceDetection) error {
+	if channelID <= 0 {
+		channelID = 1
+	}
+	if fd.Sensitivity <= 0 {
+		fd.Sensitivity = 4
+	} else if fd.Sensitivity > 5 {
+		fd.Sensitivity = 5
+	}
+
+	payload := fmt.Sprintf(`<?xml version="1.0" encoding="UTF-8"?>
+<FaceDetect version="2.0" xmlns="http://www.hikvision.com/ver20/XMLSchema">
+  <enabled>%t</enabled>
+  <FaceDetectAreaList>
+    <FaceDetectArea>
+      <id>1</id>
+      <sensitivityLevel>%d</sensitivityLevel>
+    </FaceDetectArea>
+  </FaceDetectAreaList>
+  <highlightsenabled>%t</highlightsenabled>
+</FaceDetect>`, fd.Enabled, fd.Sensitivity, fd.EnableHighlight)
+
+	path := fmt.Sprintf("/ISAPI/Smart/FaceDetect/%d", channelID)
+	data, code, _, err := c.DoRequest(ip, username, password, "PUT", path, []byte(payload), "application/xml")
+	if err != nil {
+		return err
+	}
+	if code != http.StatusOK && code != http.StatusAccepted && code != http.StatusNoContent {
+		return fmt.Errorf("failed to set face detection: status %d (resp: %s)", code, string(data))
+	}
+	return nil
+}
+

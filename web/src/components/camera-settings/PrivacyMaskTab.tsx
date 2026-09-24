@@ -71,12 +71,17 @@ export const PrivacyMaskTab: React.FC<PrivacyMaskTabProps> = ({
     await loadPrivacyMask();
   };
 
+  const prevRefreshKeyRef = useRef<number | undefined>(refreshKey);
+  const prevCameraIdRef = useRef<number>(camera.id);
+  const isLoadedRef = useRef<boolean>(false);
+
   const loadPrivacyMask = useCallback(async () => {
     if (!camera) return;
     setIsLoading(true);
     try {
       const res = await api.getCameraPrivacyMask(camera.id);
       setMask(res);
+      isLoadedRef.current = true;
     } catch (err: any) {
       console.warn('privacy mask load error', err);
       // Initialize with default empty configuration if not yet configured
@@ -86,14 +91,28 @@ export const PrivacyMaskTab: React.FC<PrivacyMaskTabProps> = ({
         normalized_screen_height: 480,
         regions: [],
       });
+      isLoadedRef.current = true;
     } finally {
       setIsLoading(false);
     }
-  }, [camera]);
+  }, [camera.id]);
 
   useEffect(() => {
+    if (prevCameraIdRef.current !== camera.id) {
+      prevCameraIdRef.current = camera.id;
+      isLoadedRef.current = false;
+    }
+    if (!isLoadedRef.current) {
+      loadPrivacyMask();
+    }
+  }, [camera.id, loadPrivacyMask]);
+
+  useEffect(() => {
+    if (!refreshKey || refreshKey === prevRefreshKeyRef.current) return;
+    prevRefreshKeyRef.current = refreshKey;
+    handleCancelDrawing();
     loadPrivacyMask();
-  }, [loadPrivacyMask, refreshKey]);
+  }, [refreshKey, handleCancelDrawing, loadPrivacyMask]);
 
   useEffect(() => {
     if (onRegisterRefresh) {

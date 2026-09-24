@@ -4,6 +4,7 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"os"
 	"regexp"
 	"strings"
 	"testing"
@@ -111,7 +112,7 @@ func TestISAPINTPGetAndSet(t *testing.T) {
 <NTPServer version="2.0" xmlns="http://www.hikvision.com/ver20/XMLSchema">
 <id>1</id>
 <addressingFormatType>ipaddress</addressingFormatType>
-<ipAddress>192.168.2.150</ipAddress>
+<ipAddress>192.0.2.150</ipAddress>
 <portNo>123</portNo>
 <synchronizeInterval>2</synchronizeInterval>
 </NTPServer>`))
@@ -138,11 +139,11 @@ func TestISAPINTPGetAndSet(t *testing.T) {
 		t.Fatalf("GetNTP failed: %v", err)
 	}
 
-	if ntp.HostName != "192.168.2.150" {
-		t.Errorf("expected HostName '192.168.2.150', got '%s'", ntp.HostName)
+	if ntp.HostName != "192.0.2.150" {
+		t.Errorf("expected HostName '192.0.2.150', got '%s'", ntp.HostName)
 	}
-	if ntp.IPAddress != "192.168.2.150" {
-		t.Errorf("expected IPAddress '192.168.2.150', got '%s'", ntp.IPAddress)
+	if ntp.IPAddress != "192.0.2.150" {
+		t.Errorf("expected IPAddress '192.0.2.150', got '%s'", ntp.IPAddress)
 	}
 	if ntp.PortNo != 123 {
 		t.Errorf("expected PortNo 123, got %d", ntp.PortNo)
@@ -153,7 +154,7 @@ func TestISAPINTPGetAndSet(t *testing.T) {
 
 	// Test SetNTP with an IP address
 	err = client.SetNTP(host, "admin", "12345", NTPServer{
-		HostName:            "192.168.2.150",
+		HostName:            "192.0.2.150",
 		PortNo:              123,
 		SynchronizeInterval: 5,
 	})
@@ -161,8 +162,8 @@ func TestISAPINTPGetAndSet(t *testing.T) {
 		t.Fatalf("SetNTP failed: %v", err)
 	}
 
-	if !strings.Contains(receivedPUT, "<ipAddress>192.168.2.150</ipAddress>") {
-		t.Errorf("expected payload to contain <ipAddress>192.168.2.150</ipAddress>, got: %s", receivedPUT)
+	if !strings.Contains(receivedPUT, "<ipAddress>192.0.2.150</ipAddress>") {
+		t.Errorf("expected payload to contain <ipAddress>192.0.2.150</ipAddress>, got: %s", receivedPUT)
 	}
 	if !strings.Contains(receivedPUT, "<addressingFormatType>ipaddress</addressingFormatType>") {
 		t.Errorf("expected payload to contain <addressingFormatType>ipaddress</addressingFormatType>, got: %s", receivedPUT)
@@ -523,6 +524,60 @@ func TestISAPINasOnlyStorage(t *testing.T) {
 	nas := storage[0]
 	if nas.ID != 1 || nas.HostName != "192.168.1.50" || nas.Path != "/mnt/storage/cam1" || nas.CapacityMB != 1048576 || nas.FreeSpaceMB != 524288 {
 		t.Errorf("unexpected NAS entry: %+v", nas)
+	}
+}
+
+func TestISAPINasMountTypeSMBCIFS(t *testing.T) {
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/ISAPI/ContentMgmt/Storage" {
+			w.Header().Set("Content-Type", "application/xml")
+			w.WriteHeader(http.StatusOK)
+			_, _ = w.Write([]byte(`<?xml version="1.0" encoding="UTF-8"?>
+<storage version="2.0" xmlns="http://www.hikvision.com/ver20/XMLSchema">
+<nasList version="2.0" xmlns="http://www.hikvision.com/ver20/XMLSchema">
+<nas version="2.0" xmlns="http://www.hikvision.com/ver20/XMLSchema">
+<id>9</id>
+<ipAddress>192.168.1.150</ipAddress>
+<nasType>NFS</nasType>
+<path>/mnt/hikvision/spicam4</path>
+<status>ok</status>
+<capacity>146560</capacity>
+<mountType>NFS</mountType>
+</nas>
+<nas version="2.0" xmlns="http://www.hikvision.com/ver20/XMLSchema">
+<id>10</id>
+<ipAddress>192.168.1.222</ipAddress>
+<nasType>NFS</nasType>
+<path>/test1/iew</path>
+<status>offline</status>
+<capacity>0</capacity>
+<mountType>SMB/CIFS</mountType>
+</nas>
+</nasList>
+</storage>`))
+			return
+		}
+		w.WriteHeader(http.StatusNotFound)
+	}))
+	defer ts.Close()
+
+	host := strings.TrimPrefix(ts.URL, "http://")
+	client := NewCameraClient()
+
+	storage, err := client.GetStorageInfo(host, "admin", "12345")
+	if err != nil {
+		t.Fatalf("GetStorageInfo failed: %v", err)
+	}
+
+	if len(storage) != 2 {
+		t.Fatalf("expected 2 storage entries, got %d", len(storage))
+	}
+
+	if storage[0].Type != "NFS" {
+		t.Errorf("expected NAS 9 type to be NFS, got %s", storage[0].Type)
+	}
+	if storage[1].Type != "SMB/CIFS" {
+		t.Errorf("expected NAS 10 type to be SMB/CIFS, got %s", storage[1].Type)
 	}
 }
 
@@ -1005,29 +1060,29 @@ func TestISAPICapabilityParsingVariants(t *testing.T) {
 }
 
 func TestLiveCamera2StreamSettings(t *testing.T) {
+	testIP := os.Getenv("HIKVISION_TEST_IP")
+	testPass := os.Getenv("HIKVISION_TEST_PASSWORD")
+	if testIP == "" || testPass == "" {
+		t.Skip("Skipping live camera test: HIKVISION_TEST_IP or HIKVISION_TEST_PASSWORD not set")
+		return
+	}
 	client := NewCameraClient()
 	// Test Sub Stream (102)
-	streamSub, err := client.GetStreamSettings("192.168.2.172", "admin", "loco8Way", 102)
+	streamSub, err := client.GetStreamSettings(testIP, "admin", testPass, 102)
 	if err != nil {
 		t.Skipf("Live camera not reachable: %v", err)
 		return
 	}
-	t.Logf("Live camera 2 SubStream (102): resolution=%s, fps=%d, supported_resolutions=%v, supported_fps=%v",
+	t.Logf("Live camera SubStream (102): resolution=%s, fps=%d, supported_resolutions=%v, supported_fps=%v",
 		streamSub.Resolution, streamSub.FPS, streamSub.SupportedResolutions, streamSub.SupportedFPS)
-	if len(streamSub.SupportedResolutions) != 3 {
-		t.Errorf("expected exactly 3 resolutions on sub-stream, got %d: %v", len(streamSub.SupportedResolutions), streamSub.SupportedResolutions)
-	}
 
 	// Test Main Stream (101)
-	streamMain, err := client.GetStreamSettings("192.168.2.172", "admin", "loco8Way", 101)
+	streamMain, err := client.GetStreamSettings(testIP, "admin", testPass, 101)
 	if err != nil {
 		t.Fatalf("failed getting main stream 101: %v", err)
 	}
-	t.Logf("Live camera 2 MainStream (101): resolution=%s, fps=%d, supported_resolutions=%v, supported_fps=%v",
+	t.Logf("Live camera MainStream (101): resolution=%s, fps=%d, supported_resolutions=%v, supported_fps=%v",
 		streamMain.Resolution, streamMain.FPS, streamMain.SupportedResolutions, streamMain.SupportedFPS)
-	if len(streamMain.SupportedResolutions) != 5 {
-		t.Errorf("expected exactly 5 resolutions on main-stream, got %d: %v", len(streamMain.SupportedResolutions), streamMain.SupportedResolutions)
-	}
 }
 
 func TestISAPIPrivacyMask(t *testing.T) {
@@ -1219,13 +1274,19 @@ func TestISAPISmartCalibration(t *testing.T) {
 }
 
 func TestISAPISmartCalibrationLive(t *testing.T) {
+	testIP := os.Getenv("HIKVISION_TEST_IP")
+	testPass := os.Getenv("HIKVISION_TEST_PASSWORD")
+	if testIP == "" || testPass == "" {
+		t.Skip("Skipping live camera test: HIKVISION_TEST_IP or HIKVISION_TEST_PASSWORD not set")
+		return
+	}
 	client := NewCameraClient()
-	ld, err := client.GetLineDetection("192.168.2.176", "admin", "loco8Way", 1)
+	ld, err := client.GetLineDetection(testIP, "admin", testPass, 1)
 	if err != nil {
 		t.Skipf("Live camera not reachable: %v", err)
 		return
 	}
-	t.Logf("Live camera 192.168.2.176 line crossing before: enabled=%t, minSize=%+v, maxSize=%+v", ld.Enabled, ld.MinSize, ld.MaxSize)
+	t.Logf("Live camera line crossing before: enabled=%t, minSize=%+v, maxSize=%+v", ld.Enabled, ld.MinSize, ld.MaxSize)
 
 	origMin := ld.MinSize
 	origMax := ld.MaxSize
@@ -1236,12 +1297,12 @@ func TestISAPISmartCalibrationLive(t *testing.T) {
 	ld.MinSize = testMin
 	ld.MaxSize = testMax
 
-	if err := client.SetLineDetection("192.168.2.176", "admin", "loco8Way", 1, *ld); err != nil {
+	if err := client.SetLineDetection(testIP, "admin", testPass, 1, *ld); err != nil {
 		t.Fatalf("SetLineDetection with calibration failed: %v", err)
 	}
 
 	// Verify read-back
-	updated, err := client.GetLineDetection("192.168.2.176", "admin", "loco8Way", 1)
+	updated, err := client.GetLineDetection(testIP, "admin", testPass, 1)
 	if err != nil {
 		t.Fatalf("GetLineDetection readback failed: %v", err)
 	}
@@ -1254,6 +1315,246 @@ func TestISAPISmartCalibrationLive(t *testing.T) {
 	// Restore original state
 	ld.MinSize = origMin
 	ld.MaxSize = origMax
-	_ = client.SetLineDetection("192.168.2.176", "admin", "loco8Way", 1, *ld)
+	_ = client.SetLineDetection(testIP, "admin", testPass, 1, *ld)
 }
+
+func TestISAPINewFeatures(t *testing.T) {
+	sceneXML := `<?xml version="1.0" encoding="UTF-8"?>
+<SceneChangeDetection version="2.0" xmlns="http://www.hikvision.com/ver20/XMLSchema">
+  <enabled>true</enabled>
+  <id>1</id>
+  <SceneChangeDetectionAreaList>
+    <SceneChangeDetectionArea>
+      <id>1</id>
+      <sensitivityLevel>65</sensitivityLevel>
+    </SceneChangeDetectionArea>
+  </SceneChangeDetectionAreaList>
+</SceneChangeDetection>`
+
+	faceXML := `<?xml version="1.0" encoding="UTF-8"?>
+<FaceDetect version="2.0" xmlns="http://www.hikvision.com/ver20/XMLSchema">
+  <enabled>true</enabled>
+  <FaceDetectAreaList>
+    <FaceDetectArea>
+      <id>1</id>
+      <sensitivityLevel>4</sensitivityLevel>
+    </FaceDetectArea>
+  </FaceDetectAreaList>
+  <highlightsenabled>true</highlightsenabled>
+</FaceDetect>`
+
+	schedXML := `<?xml version="1.0" encoding="UTF-8"?>
+<Schedule version="2.0" xmlns="http://www.hikvision.com/ver20/XMLSchema">
+  <id>VMD_video1</id>
+  <eventType>VMD</eventType>
+  <videoInputChannelID>1</videoInputChannelID>
+  <TimeBlockList>
+    <TimeBlock>
+      <dayOfWeek>1</dayOfWeek>
+      <TimeRange>
+        <beginTime>08:00</beginTime>
+        <endTime>18:00</endTime>
+      </TimeRange>
+    </TimeBlock>
+  </TimeBlockList>
+</Schedule>`
+
+	triggerXML := `<?xml version="1.0" encoding="UTF-8"?>
+<EventTrigger version="2.0" xmlns="http://www.hikvision.com/ver20/XMLSchema">
+  <id>VMD-1</id>
+  <eventType>VMD</eventType>
+  <videoInputChannelID>1</videoInputChannelID>
+  <EventTriggerNotificationList>
+    <EventTriggerNotification>
+      <id>center</id>
+      <notificationMethod>center</notificationMethod>
+    </EventTriggerNotification>
+    <EventTriggerNotification>
+      <id>record-1</id>
+      <notificationMethod>record</notificationMethod>
+    </EventTriggerNotification>
+    <EventTriggerNotification>
+      <id>beep</id>
+      <notificationMethod>beep</notificationMethod>
+    </EventTriggerNotification>
+  </EventTriggerNotificationList>
+</EventTrigger>`
+
+	trackXML := `<?xml version="1.0" encoding="UTF-8"?>
+<Track version="2.0" xmlns="http://www.hikvision.com/ver20/XMLSchema">
+  <id>1</id>
+  <Enable>true</Enable>
+  <TrackSchedule>
+    <ScheduleBlockList>
+      <ScheduleBlock>
+        <ScheduleAction>
+          <id>1</id>
+          <ScheduleActionStartTime>
+            <DayOfWeek>Monday</DayOfWeek>
+            <TimeOfDay>00:00:00</TimeOfDay>
+          </ScheduleActionStartTime>
+          <ScheduleActionEndTime>
+            <DayOfWeek>Monday</DayOfWeek>
+            <TimeOfDay>24:00:00</TimeOfDay>
+          </ScheduleActionEndTime>
+          <Actions>
+            <ActionRecordingMode>AllEvent</ActionRecordingMode>
+          </Actions>
+        </ScheduleAction>
+      </ScheduleBlock>
+    </ScheduleBlockList>
+  </TrackSchedule>
+  <CustomExtensionList>
+    <CustomExtension>
+      <enableSchedule>true</enableSchedule>
+      <PreRecordTimeSeconds>5</PreRecordTimeSeconds>
+      <PostRecordTimeSeconds>10</PostRecordTimeSeconds>
+    </CustomExtension>
+  </CustomExtensionList>
+</Track>`
+
+	snapshotXML := `<?xml version="1.0" encoding="UTF-8"?>
+<SnapshotChannel version="2.0" xmlns="http://www.hikvision.com/ver20/XMLSchema">
+  <id>1</id>
+  <videoInputChannelID>1</videoInputChannelID>
+  <timingCapture>
+    <enabled>true</enabled>
+    <compress>
+      <pictureWidth>1920</pictureWidth>
+      <pictureHeight>1080</pictureHeight>
+      <quality>80</quality>
+      <captureInterval>5000</captureInterval>
+    </compress>
+  </timingCapture>
+  <eventCapture>
+    <enabled>true</enabled>
+    <compress>
+      <pictureWidth>1920</pictureWidth>
+      <pictureHeight>1080</pictureHeight>
+      <quality>80</quality>
+      <captureInterval>1000</captureInterval>
+      <captureNumber>4</captureNumber>
+    </compress>
+  </eventCapture>
+</SnapshotChannel>`
+
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/xml")
+		switch {
+		case strings.Contains(r.URL.Path, "/SceneChangeDetection"):
+			if r.Method == "GET" {
+				w.Write([]byte(sceneXML))
+			} else {
+				w.Write([]byte(`<ResponseStatus version="2.0"><statusCode>1</statusCode></ResponseStatus>`))
+			}
+		case strings.Contains(r.URL.Path, "/FaceDetect"):
+			if r.Method == "GET" {
+				w.Write([]byte(faceXML))
+			} else {
+				w.Write([]byte(`<ResponseStatus version="2.0"><statusCode>1</statusCode></ResponseStatus>`))
+			}
+		case strings.Contains(r.URL.Path, "/schedules/motionDetections/"):
+			if r.Method == "GET" {
+				w.Write([]byte(schedXML))
+			} else {
+				w.Write([]byte(`<ResponseStatus version="2.0"><statusCode>1</statusCode></ResponseStatus>`))
+			}
+		case strings.Contains(r.URL.Path, "/triggers/VMD-"):
+			if r.Method == "GET" {
+				w.Write([]byte(triggerXML))
+			} else {
+				w.Write([]byte(`<ResponseStatus version="2.0"><statusCode>1</statusCode></ResponseStatus>`))
+			}
+		case strings.Contains(r.URL.Path, "/record/tracks/"):
+			if r.Method == "GET" {
+				if strings.HasSuffix(r.URL.Path, "/capabilities") {
+					w.Write([]byte(`<?xml version="1.0" encoding="UTF-8"?>
+<Track version="2.0">
+  <DefaultRecordingMode opt="CMR,MOTION,ALARM,EDR,ALARMANDMOTION,AllEvent">CMR</DefaultRecordingMode>
+</Track>`))
+				} else {
+					w.Write([]byte(trackXML))
+				}
+			} else {
+				w.Write([]byte(`<ResponseStatus version="2.0"><statusCode>1</statusCode></ResponseStatus>`))
+			}
+		case strings.Contains(r.URL.Path, "/Snapshot/channels/"):
+			if r.Method == "GET" {
+				w.Write([]byte(snapshotXML))
+			} else {
+				w.Write([]byte(`<ResponseStatus version="2.0"><statusCode>1</statusCode></ResponseStatus>`))
+			}
+		default:
+			w.WriteHeader(http.StatusOK)
+		}
+	}))
+	defer ts.Close()
+
+	host := strings.TrimPrefix(ts.URL, "http://")
+	client := NewCameraClient()
+
+	// 1. Scene Change
+	sc, err := client.GetSceneChangeDetection(host, "admin", "12345", 1)
+	if err != nil || !sc.Enabled || sc.Sensitivity != 65 {
+		t.Fatalf("unexpected SceneChangeDetection: %+v, err: %v", sc, err)
+	}
+	if err := client.SetSceneChangeDetection(host, "admin", "12345", 1, *sc); err != nil {
+		t.Fatalf("failed SetSceneChangeDetection: %v", err)
+	}
+
+	// 2. Face Detection
+	fd, err := client.GetFaceDetection(host, "admin", "12345", 1)
+	if err != nil || !fd.Enabled || fd.Sensitivity != 4 || !fd.EnableHighlight {
+		t.Fatalf("unexpected FaceDetection: %+v, err: %v", fd, err)
+	}
+	if err := client.SetFaceDetection(host, "admin", "12345", 1, *fd); err != nil {
+		t.Fatalf("failed SetFaceDetection: %v", err)
+	}
+
+	// 3. Event Schedule
+	sched, err := client.GetEventSchedule(host, "admin", "12345", "motion", 1)
+	if err != nil || len(sched.Days) != 7 {
+		t.Fatalf("unexpected EventSchedule: %+v, err: %v", sched, err)
+	}
+	if len(sched.Days[0].TimeRanges) != 1 || sched.Days[0].TimeRanges[0].BeginTime != "08:00" {
+		t.Fatalf("unexpected schedule day 1: %+v", sched.Days[0])
+	}
+	if err := client.SetEventSchedule(host, "admin", "12345", "motion", 1, *sched); err != nil {
+		t.Fatalf("failed SetEventSchedule: %v", err)
+	}
+
+	// 4. Event Linkage
+	linkage, err := client.GetEventLinkage(host, "admin", "12345", "motion", 1)
+	if err != nil || !linkage.NotifySurveillanceCenter || !linkage.TriggerChannelRecord || !linkage.AudibleWarning || linkage.SendEmail {
+		t.Fatalf("unexpected EventLinkage: %+v, err: %v", linkage, err)
+	}
+	if err := client.SetEventLinkage(host, "admin", "12345", "motion", 1, *linkage); err != nil {
+		t.Fatalf("failed SetEventLinkage: %v", err)
+	}
+
+	// 5. Storage Record Schedule
+	rs, err := client.GetRecordSchedule(host, "admin", "12345", 1)
+	if err != nil || !rs.Enabled || !rs.EnableSchedule || rs.PreRecordTimeSeconds != 5 || rs.PostRecordTimeSeconds != 10 {
+		t.Fatalf("unexpected RecordSchedule: %+v, err: %v", rs, err)
+	}
+	if len(rs.SupportedRecordModes) != 6 || rs.SupportedRecordModes[0] != "CMR" || rs.SupportedRecordModes[3] != "EDR" {
+		t.Fatalf("unexpected SupportedRecordModes: %v", rs.SupportedRecordModes)
+	}
+	if len(rs.Days[0].TimeRanges) != 1 || rs.Days[0].TimeRanges[0].RecordMode != "AllEvent" {
+		t.Fatalf("unexpected record schedule day 1: %+v", rs.Days[0])
+	}
+	if err := client.SetRecordSchedule(host, "admin", "12345", 1, *rs); err != nil {
+		t.Fatalf("failed SetRecordSchedule: %v", err)
+	}
+
+	// 6. Capture Settings
+	cs, err := client.GetCaptureSettings(host, "admin", "12345", 1)
+	if err != nil || !cs.TimingCapture.Enabled || cs.TimingCapture.Resolution != "1920x1080" || cs.EventCapture.CaptureCount != 4 {
+		t.Fatalf("unexpected CaptureSettings: %+v, err: %v", cs, err)
+	}
+	if err := client.SetCaptureSettings(host, "admin", "12345", 1, *cs); err != nil {
+		t.Fatalf("failed SetCaptureSettings: %v", err)
+	}
+}
+
 

@@ -109,33 +109,8 @@ export const ImageTab: React.FC<ImageTabProps> = ({
     );
   };
 
-  if (activeSubTab === 'privacy') {
-    return (
-      <div className="space-y-6">
-        {renderSubTabs()}
-        <PrivacyMaskTab
-          camera={camera}
-          snapshotKey={snapshotKey}
-          refreshKey={refreshKey}
-          onRefreshPreview={onRefreshPreview}
-          setSaveStatus={setSaveStatus}
-          onRegisterRefresh={onRegisterPrivacyRefresh}
-        />
-      </div>
-    );
-  }
-
-  if (!imageSettings) {
-    return (
-      <div className="space-y-6">
-        {renderSubTabs()}
-        <div className="text-center py-12 text-slate-500 text-sm">Loading image settings...</div>
-      </div>
-    );
-  }
-
-  // IR Cut Filter options
-  const irModes = (imageSettings.supported_ircut_filter_types && imageSettings.supported_ircut_filter_types.length > 0
+  // Safe options fallback when imageSettings is loading
+  const irModes = (imageSettings?.supported_ircut_filter_types && imageSettings.supported_ircut_filter_types.length > 0
     ? imageSettings.supported_ircut_filter_types
     : ['auto', 'day', 'night', 'schedule']
   ).map((mode) => ({
@@ -143,40 +118,55 @@ export const ImageTab: React.FC<ImageTabProps> = ({
     label: IR_LABELS[mode] || mode.toUpperCase(),
   }));
 
-  // WDR options
-  const wdrModes = imageSettings.supported_wdr_modes && imageSettings.supported_wdr_modes.length > 0
+  const wdrModes = imageSettings?.supported_wdr_modes && imageSettings.supported_wdr_modes.length > 0
     ? imageSettings.supported_wdr_modes
     : ['close', 'open'];
 
-  // White Balance options
-  const wbModes = imageSettings.supported_white_balance_styles && imageSettings.supported_white_balance_styles.length > 0
+  const wbModes = imageSettings?.supported_white_balance_styles && imageSettings.supported_white_balance_styles.length > 0
     ? imageSettings.supported_white_balance_styles
     : ['auto1', 'manual', 'daylightLamp', 'incandescentlight', 'locked'];
 
-  // BLC options
-  const blcModes = imageSettings.supported_blc_modes && imageSettings.supported_blc_modes.length > 0
+  const blcModes = imageSettings?.supported_blc_modes && imageSettings.supported_blc_modes.length > 0
     ? imageSettings.supported_blc_modes
     : ['CLOSE', 'UP', 'DOWN', 'LEFT', 'RIGHT', 'CENTER', 'AUTO'];
 
-  // Noise Reduction options
-  const nrModes = imageSettings.supported_noise_reduce_modes && imageSettings.supported_noise_reduce_modes.length > 0
+  const nrModes = imageSettings?.supported_noise_reduce_modes && imageSettings.supported_noise_reduce_modes.length > 0
     ? imageSettings.supported_noise_reduce_modes
     : ['close', 'general', 'advanced'];
 
   // Supplement Light options
-  const slModes = imageSettings.supported_supplement_light_modes && imageSettings.supported_supplement_light_modes.length > 0
+  const slModes = imageSettings?.supported_supplement_light_modes && imageSettings.supported_supplement_light_modes.length > 0
     ? imageSettings.supported_supplement_light_modes
     : ['close', 'colorVuWhiteLight'];
 
   // Flip options
-  const flipModes = imageSettings.supported_image_flip_styles && imageSettings.supported_image_flip_styles.length > 0
+  const flipModes = imageSettings?.supported_image_flip_styles && imageSettings.supported_image_flip_styles.length > 0
     ? ['OFF', ...imageSettings.supported_image_flip_styles.filter((f) => f.toUpperCase() !== 'OFF')]
     : ['OFF', 'LEFTRIGHT', 'UPDOWN', 'CENTER'];
 
   return (
     <div className="space-y-6">
       {renderSubTabs()}
-      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2">
+
+      {hasPrivacyMask && (
+        <div className={activeSubTab === 'privacy' ? 'block' : 'hidden'}>
+          <PrivacyMaskTab
+            camera={camera}
+            snapshotKey={snapshotKey}
+            refreshKey={refreshKey}
+            onRefreshPreview={onRefreshPreview}
+            setSaveStatus={setSaveStatus}
+            onRegisterRefresh={onRegisterPrivacyRefresh}
+          />
+        </div>
+      )}
+
+      <div className={activeSubTab === 'display' ? 'block space-y-6' : 'hidden'}>
+        {!imageSettings ? (
+          <div className="text-center py-12 text-slate-500 text-sm">Loading image settings...</div>
+        ) : (
+          <>
+            <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2">
         <div>
           <h3 className="text-sm font-semibold text-white mb-0.5">Image & Display Settings</h3>
           <p className="text-xs text-slate-400">
@@ -737,6 +727,9 @@ export const ImageTab: React.FC<ImageTabProps> = ({
           </button>
         </div>
       </form>
+          </>
+        )}
+      </div>
     </div>
   );
 };

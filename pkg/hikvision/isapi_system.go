@@ -351,6 +351,12 @@ func (c *CameraClient) ProbeCapabilities(ip, username, password string) (*Camera
 		if strings.Contains(sc, "<isSupportFieldDetection>true</isSupportFieldDetection>") && !caps.HasIntrusionDetection {
 			caps.HasIntrusionDetection = true
 		}
+		if strings.Contains(sc, "<isSupportSceneChangeDetection>true</isSupportSceneChangeDetection>") {
+			caps.HasSceneChangeDetection = true
+		}
+		if strings.Contains(sc, "<isSupportFaceDetection>true</isSupportFaceDetection>") || strings.Contains(sc, "<isSupportFaceDetect>true</isSupportFaceDetect>") {
+			caps.HasFaceDetection = true
+		}
 	} else {
 		// Fallback: probe individual endpoints if SmartCap not available
 		_, code, _, _ = c.DoRequest(ip, username, password, "GET", "/ISAPI/Smart/UnattendedBaggage/1", nil, "")
@@ -379,9 +385,21 @@ func (c *CameraClient) ProbeCapabilities(ip, username, password string) (*Camera
 		if code == http.StatusOK {
 			caps.HasRegionExiting = true
 		}
+
+		// Fallback probe for Scene Change Detection if SmartCap not available
+		_, code, _, _ = c.DoRequest(ip, username, password, "GET", "/ISAPI/Smart/SceneChangeDetection/1", nil, "")
+		if code == http.StatusOK {
+			caps.HasSceneChangeDetection = true
+		}
+
+		// Fallback probe for Face Detection if SmartCap not available
+		_, code, _, _ = c.DoRequest(ip, username, password, "GET", "/ISAPI/Smart/FaceDetect/1", nil, "")
+		if code == http.StatusOK {
+			caps.HasFaceDetection = true
+		}
 	}
 
-	// 17. Target Detection & Motion Polygon support (e.g. AcuSense cameras like 192.168.2.176)
+	// 19. Target Detection & Motion Polygon support (e.g. AcuSense cameras)
 	motCap, motCode, _, _ := c.DoRequest(ip, username, password, "GET", "/ISAPI/System/Video/inputs/channels/1/motionDetection/capabilities", nil, "")
 	if motCode == http.StatusOK {
 		motCapStr := string(motCap)
@@ -393,10 +411,7 @@ func (c *CameraClient) ProbeCapabilities(ip, username, password string) (*Camera
 		}
 	}
 
-	if ip == "192.168.2.176" {
-		caps.HasTargetDetection = true
-		caps.HasPolygonMotion = true
-	} else if scCode == http.StatusOK && (strings.Contains(string(smartCapData), "<isSupportPeopleDetection>true") ||
+	if scCode == http.StatusOK && (strings.Contains(string(smartCapData), "<isSupportPeopleDetection>true") ||
 		strings.Contains(string(smartCapData), "<isSupportHumanMisinfoFilter>true") ||
 		strings.Contains(string(smartCapData), "<isSupportVehicleMisinfoFilter>true")) {
 		caps.HasTargetDetection = true
@@ -407,19 +422,31 @@ func (c *CameraClient) ProbeCapabilities(ip, username, password string) (*Camera
 		}
 	}
 
-	// 18. Storage
+	// 20. Storage
 	stg, _ := c.GetStorageInfo(ip, username, password)
 	if len(stg) > 0 {
 		caps.HasStorage = true
 	}
 
-	// 19. PTZ
+	// 21. Record Schedule
+	_, code, _, _ = c.DoRequest(ip, username, password, "GET", "/ISAPI/ContentMgmt/record/tracks/1", nil, "")
+	if code == http.StatusOK {
+		caps.HasRecordSchedule = true
+	}
+
+	// 22. Capture (Snapshot)
+	_, code, _, _ = c.DoRequest(ip, username, password, "GET", "/ISAPI/Snapshot/channels/1", nil, "")
+	if code == http.StatusOK {
+		caps.HasCapture = true
+	}
+
+	// 23. PTZ
 	_, code, _, _ = c.DoRequest(ip, username, password, "GET", "/ISAPI/PTZCtrl/channels/1/capabilities", nil, "")
 	if code == http.StatusOK {
 		caps.HasPTZ = true
 	}
 
-	// 20. Privacy Mask
+	// 24. Privacy Mask
 	_, code, _, _ = c.DoRequest(ip, username, password, "GET", "/ISAPI/System/Video/inputs/channels/1/privacyMask", nil, "")
 	if code == http.StatusOK {
 		caps.HasPrivacyMask = true
