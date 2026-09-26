@@ -8,6 +8,9 @@ export interface Camera {
   is_isapi: boolean;
   enabled: boolean;
   sort_order: number;
+  has_audio_input?: boolean;
+  has_audio_output?: boolean;
+  has_sub_stream?: boolean;
   created_at: string;
   updated_at: string;
 }

@@ -149,15 +149,17 @@ export const Navbar: React.FC<NavbarProps> = ({
 
         {/* Right: Quick Actions & Profile */}
         <div className="flex items-center gap-1 sm:gap-1.5 shrink-0">
-          {/* Quick Rescan */}
-          <button
-            onClick={onRescan}
-            disabled={isScanning}
-            title="Scan recordings storage"
-            className="p-1.5 sm:p-2 text-slate-400 hover:text-blue-400 hover:bg-slate-800/80 rounded-lg transition-colors disabled:opacity-50"
-          >
-            <RefreshCw className={`w-4 h-4 ${isScanning ? 'animate-spin text-blue-400' : ''}`} />
-          </button>
+          {/* Quick Rescan - only visible on playback tab */}
+          {activeTab === 'playback' && (
+            <button
+              onClick={onRescan}
+              disabled={isScanning}
+              title="Scan recordings storage"
+              className="p-1.5 sm:p-2 text-slate-400 hover:text-blue-400 hover:bg-slate-800/80 rounded-lg transition-colors disabled:opacity-50"
+            >
+              <RefreshCw className={`w-4 h-4 ${isScanning ? 'animate-spin text-blue-400' : ''}`} />
+            </button>
+          )}
 
           {/* Live Events Feed button */}
           {onOpenEvents && (
@@ -234,45 +236,47 @@ export const Navbar: React.FC<NavbarProps> = ({
       {/* Mobile / Tablet Drawer (<md) */}
       {mobileMenuOpen && (
         <div className="md:hidden border-t border-slate-800 bg-slate-950/98 backdrop-blur-lg px-4 py-4 space-y-3.5 animate-in slide-in-from-top-2 duration-150 overflow-y-auto max-h-[calc(100dvh-4rem)]">
-          <div className="space-y-1.5">
-            <div className="text-[11px] font-semibold text-slate-400 uppercase tracking-wider">
-              Select Camera
-            </div>
-            <div className="grid grid-cols-2 gap-1.5 max-h-48 overflow-y-auto pr-1">
-              <button
-                onClick={() => {
-                  onSelectCamera(null);
-                  setMobileMenuOpen(false);
-                }}
-                className={`px-3 py-2 text-xs rounded-lg border text-left flex items-center gap-1.5 transition-colors ${
-                  !selectedCamera
-                    ? 'bg-blue-600/20 border-blue-500 text-blue-300 font-semibold'
-                    : 'bg-slate-900 border-slate-800 text-slate-300 hover:bg-slate-800'
-                }`}
-              >
-                <Grid className="w-3.5 h-3.5 shrink-0" />
-                <span className="truncate">All Cameras</span>
-              </button>
-              {cameras.map((c) => (
+          {activeTab === 'playback' && (
+            <div className="space-y-1.5">
+              <div className="text-[11px] font-semibold text-slate-400 uppercase tracking-wider">
+                Select Camera
+              </div>
+              <div className="grid grid-cols-2 gap-1.5 max-h-48 overflow-y-auto pr-1">
                 <button
-                  key={c.id}
                   onClick={() => {
-                    onSelectCamera(c);
+                    onSelectCamera(null);
                     setMobileMenuOpen(false);
                   }}
-                  className={`px-3 py-2 text-xs rounded-lg border text-left truncate transition-colors ${
-                    selectedCamera?.id === c.id
+                  className={`px-3 py-2 text-xs rounded-lg border text-left flex items-center gap-1.5 transition-colors ${
+                    !selectedCamera
                       ? 'bg-blue-600/20 border-blue-500 text-blue-300 font-semibold'
                       : 'bg-slate-900 border-slate-800 text-slate-300 hover:bg-slate-800'
                   }`}
                 >
-                  <span className="truncate">{c.name}</span>
+                  <Grid className="w-3.5 h-3.5 shrink-0" />
+                  <span className="truncate">All Cameras</span>
                 </button>
-              ))}
+                {cameras.map((c) => (
+                  <button
+                    key={c.id}
+                    onClick={() => {
+                      onSelectCamera(c);
+                      setMobileMenuOpen(false);
+                    }}
+                    className={`px-3 py-2 text-xs rounded-lg border text-left truncate transition-colors ${
+                      selectedCamera?.id === c.id
+                        ? 'bg-blue-600/20 border-blue-500 text-blue-300 font-semibold'
+                        : 'bg-slate-900 border-slate-800 text-slate-300 hover:bg-slate-800'
+                    }`}
+                  >
+                    <span className="truncate">{c.name}</span>
+                  </button>
+                ))}
+              </div>
             </div>
-          </div>
+          )}
 
-          <div className="grid grid-cols-3 gap-1.5 pt-2 border-t border-slate-800/80">
+          <div className={`grid grid-cols-3 gap-1.5 ${activeTab === 'playback' ? 'pt-2 border-t border-slate-800/80' : ''}`}>
             {onOpenEvents && (
               <button
                 onClick={() => {

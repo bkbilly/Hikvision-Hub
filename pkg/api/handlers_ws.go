@@ -4,10 +4,8 @@ import (
 	"bufio"
 	"bytes"
 	"context"
-	"fmt"
 	"log"
 	"net/http"
-	"net/url"
 	"os/exec"
 	"strconv"
 	"time"
@@ -103,23 +101,20 @@ func (h *WSHandler) StreamLiveWS(w http.ResponseWriter, r *http.Request) {
 		}
 	}()
 
-	userEsc := url.QueryEscape(cam.Username)
-	passEsc := url.QueryEscape(cam.Password)
+	streamParam := r.URL.Query().Get("stream")
+	requestedStream := 2
+	if streamParam == "1" || streamParam == "main" || streamParam == "101" {
+		requestedStream = 1
+	} else if streamParam == "2" || streamParam == "sub" || streamParam == "102" {
+		requestedStream = 2
+	}
 
-	var rtspCandidates []string
-	if cam.IsISAPI {
-		rtspCandidates = []string{
-			fmt.Sprintf("rtsp://%s:%s@%s:554/Streaming/Channels/102", userEsc, passEsc, cam.IP),
-			fmt.Sprintf("rtsp://%s:%s@%s:554/Streaming/Channels/101", userEsc, passEsc, cam.IP),
-			fmt.Sprintf("rtsp://%s:%s@%s:554/h264/ch1/sub/av_stream", userEsc, passEsc, cam.IP),
-		}
-	} else {
-		rtspCandidates = []string{
-			fmt.Sprintf("rtsp://%s:%s@%s:554/Streaming/channels/102", userEsc, passEsc, cam.IP),
-			fmt.Sprintf("rtsp://%s:%s@%s:554/h264/ch1/sub/av_stream", userEsc, passEsc, cam.IP),
-			fmt.Sprintf("rtsp://%s:%s@%s:554/Streaming/channels/101", userEsc, passEsc, cam.IP),
-			fmt.Sprintf("rtsp://%s:%s@%s:554/Streaming/Channels/102", userEsc, passEsc, cam.IP),
-		}
+	rtspCandidates, isHQ := GetLiveRTSPCandidates(cam, requestedStream)
+	qVal := "5"
+	rVal := "10"
+	if isHQ {
+		qVal = "3"
+		rVal = "15"
 	}
 
 	for {
@@ -140,7 +135,7 @@ func (h *WSHandler) StreamLiveWS(w http.ResponseWriter, r *http.Request) {
 				"-hide_banner",
 				"-loglevel", "error",
 				"-rtsp_transport", "tcp",
-				"-stimeout", "3000000",
+				"-timeout", "5000000",
 				"-fflags", "nobuffer",
 				"-flags", "low_delay",
 				"-probesize", "32768",
@@ -148,8 +143,8 @@ func (h *WSHandler) StreamLiveWS(w http.ResponseWriter, r *http.Request) {
 				"-i", rtspURL,
 				"-an",
 				"-c:v", "mjpeg",
-				"-q:v", "5",
-				"-r", "10",
+				"-q:v", qVal,
+				"-r", rVal,
 				"-tune", "zerolatency",
 				"-f", "image2pipe",
 				"-",

@@ -13,8 +13,13 @@ import {
   Crosshair,
   ShieldAlert,
   EyeOff,
-  Activity
+  Activity,
+  Mic,
+  Volume2,
+  X
 } from 'lucide-react';
+import { TalkButton } from './TalkButton';
+import { LiveAudioPlayer } from './LiveAudioPlayer';
 
 interface LiveGridProps {
   cameras: Camera[];
@@ -29,6 +34,7 @@ interface LiveStreamViewProps {
   cameraId: number;
   cameraName: string;
   isPaused: boolean;
+  stream?: number;
   className?: string;
 }
 
@@ -36,6 +42,7 @@ export const LiveStreamView: React.FC<LiveStreamViewProps> = ({
   cameraId,
   cameraName,
   isPaused,
+  stream,
   className = "w-full h-full object-cover select-none",
 }) => {
   const [frameSrc, setFrameSrc] = useState<string>(() => api.getSnapshotUrl(cameraId));
@@ -61,7 +68,7 @@ export const LiveStreamView: React.FC<LiveStreamViewProps> = ({
     const connect = () => {
       if (!isMounted || isPaused) return;
 
-      const wsUrl = api.getLiveWsUrl(cameraId);
+      const wsUrl = api.getLiveWsUrl(cameraId, stream);
       const ws = new WebSocket(wsUrl);
       ws.binaryType = 'arraybuffer';
       wsRef.current = ws;
@@ -114,7 +121,7 @@ export const LiveStreamView: React.FC<LiveStreamViewProps> = ({
         wsRef.current = null;
       }
     };
-  }, [cameraId, isPaused]);
+  }, [cameraId, isPaused, stream]);
 
   // Revoke Blob URL on final unmount
   useEffect(() => {
@@ -178,6 +185,7 @@ interface CameraCardProps {
   cam: Camera;
   refreshKey: number;
   isPaused: boolean;
+  onTogglePause?: (cameraId: number) => void;
   onSelectForPlayback: (cam: Camera) => void;
   onFullscreen: (cam: Camera) => void;
   onOpenDeviceSettings?: (cam: Camera) => void;
@@ -188,6 +196,7 @@ const CameraCard: React.FC<CameraCardProps> = ({
   cam,
   refreshKey,
   isPaused,
+  onTogglePause,
   onSelectForPlayback,
   onFullscreen,
   onOpenDeviceSettings,
@@ -251,6 +260,7 @@ const CameraCard: React.FC<CameraCardProps> = ({
           cameraId={cam.id}
           cameraName={cam.name}
           isPaused={isPaused}
+          stream={cam.has_sub_stream ? 2 : 1}
           className="w-full h-full object-cover select-none"
         />
       </div>
@@ -259,16 +269,31 @@ const CameraCard: React.FC<CameraCardProps> = ({
       <div className="relative z-10 p-2.5 flex items-start justify-between bg-gradient-to-b from-slate-950/85 via-slate-950/30 to-transparent pointer-events-none">
         <div className="flex flex-col gap-1 items-start min-w-0 max-w-[calc(100%-4.5rem)]">
           <div className="flex items-center gap-2 min-w-0">
-            {!isPaused ? (
-              <div className="flex items-center gap-1.5 px-2 py-0.5 rounded-full bg-rose-500/20 border border-rose-500/40 text-[10px] font-bold text-rose-400 uppercase tracking-wider shadow-sm backdrop-blur-sm shrink-0">
-                <span className="w-1.5 h-1.5 rounded-full bg-rose-500 animate-pulse" />
-                <span>LIVE</span>
-              </div>
-            ) : (
-              <div className="flex items-center gap-1.5 px-2 py-0.5 rounded-full bg-slate-800/80 border border-slate-700 text-[10px] font-bold text-slate-400 uppercase tracking-wider shadow-sm backdrop-blur-sm shrink-0">
-                <span>PAUSED</span>
-              </div>
-            )}
+            <button
+              type="button"
+              onClick={(e) => {
+                e.stopPropagation();
+                onTogglePause?.(cam.id);
+              }}
+              title={isPaused ? 'Click to resume this camera live feed' : 'Click to pause this camera live feed'}
+              className={`pointer-events-auto flex items-center gap-1.5 px-2 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-wider shadow-sm backdrop-blur-sm shrink-0 cursor-pointer transition-all active:scale-95 ${
+                !isPaused
+                  ? 'bg-rose-500/20 hover:bg-rose-500/35 border border-rose-500/40 hover:border-rose-500/60 text-rose-400 hover:text-rose-300'
+                  : 'bg-slate-800/90 hover:bg-slate-700 border border-slate-700 hover:border-slate-500 text-slate-300 hover:text-white'
+              }`}
+            >
+              {!isPaused ? (
+                <>
+                  <span className="w-1.5 h-1.5 rounded-full bg-rose-500 animate-pulse" />
+                  <span>LIVE</span>
+                </>
+              ) : (
+                <>
+                  <Play className="w-2.5 h-2.5 text-emerald-400 fill-current" />
+                  <span>PAUSED</span>
+                </>
+              )}
+            </button>
             <span className="font-semibold text-xs sm:text-sm text-white drop-shadow-md truncate">
               {cam.name}
             </span>
@@ -313,9 +338,21 @@ const CameraCard: React.FC<CameraCardProps> = ({
 
       {/* Bottom Actions Overlay */}
       <div className="relative z-10 p-2.5 flex items-center justify-between bg-gradient-to-t from-slate-950/90 via-slate-950/30 to-transparent pointer-events-none">
-        <span className="text-[11px] text-slate-300 font-mono drop-shadow">
-          {cam.ip}
-        </span>
+        <div className="flex items-center gap-1.5 min-w-0">
+          <span className="text-[11px] text-slate-300 font-mono drop-shadow truncate">
+            {cam.ip}
+          </span>
+          {cam.has_audio_input && (
+            <span title="Camera has microphone (audio supported)" className="p-0.5 rounded bg-blue-950/80 border border-blue-800/60 text-blue-300">
+              <Mic className="w-3 h-3" />
+            </span>
+          )}
+          {cam.has_audio_output && (
+            <span title="Camera has speaker (two-way audio supported)" className="p-0.5 rounded bg-emerald-950/80 border border-emerald-800/60 text-emerald-300">
+              <Volume2 className="w-3 h-3" />
+            </span>
+          )}
+        </div>
 
         <button
           onClick={() => onSelectForPlayback(cam)}
@@ -340,7 +377,46 @@ export const LiveGrid: React.FC<LiveGridProps> = ({
   const [refreshKey, setRefreshKey] = useState<number>(Date.now());
   const [isTabVisible, setIsTabVisible] = useState<boolean>(() => !document.hidden);
   const [isUserPaused, setIsUserPaused] = useState<boolean>(false);
+  const [pausedCameraIds, setPausedCameraIds] = useState<Set<number>>(new Set());
   const [fullscreenCam, setFullscreenCam] = useState<Camera | null>(null);
+
+  const toggleCameraPause = (cameraId: number) => {
+    setPausedCameraIds((prev) => {
+      // If user had clicked global pause, unpause only this camera while keeping others paused
+      if (isUserPaused) {
+        setIsUserPaused(false);
+        const next = new Set(cameras.map((c) => c.id).filter((id) => id !== cameraId));
+        return next;
+      }
+      const next = new Set(prev);
+      if (next.has(cameraId)) {
+        next.delete(cameraId);
+      } else {
+        next.add(cameraId);
+      }
+      return next;
+    });
+  };
+
+  const isCameraPaused = (cameraId: number) => {
+    if (!isTabVisible || isPaused) return true;
+    if (isUserPaused) return true;
+    return pausedCameraIds.has(cameraId);
+  };
+
+  const isAnyPaused = isUserPaused || pausedCameraIds.size > 0;
+  const pausedCount = isUserPaused ? cameras.length : pausedCameraIds.size;
+  const isAllPaused = cameras.length > 0 && pausedCount === cameras.length;
+
+  const handleToggleGlobalPause = () => {
+    if (isAnyPaused) {
+      setIsUserPaused(false);
+      setPausedCameraIds(new Set());
+    } else {
+      setIsUserPaused(true);
+      setPausedCameraIds(new Set(cameras.map((c) => c.id)));
+    }
+  };
 
   // Tab visibility detection to stop live streams in background tabs
   useEffect(() => {
@@ -384,26 +460,28 @@ export const LiveGrid: React.FC<LiveGridProps> = ({
     );
   }
 
-  // Determine if streams should be active (paused when tab hidden, user paused, or a settings modal is open)
-  const isPausedOverall = !isTabVisible || isUserPaused || isPaused;
-
   return (
     <div className="space-y-4">
       {/* Top Bar Status & Actions */}
       <div className="flex items-center justify-between px-1">
         <div className="flex items-center gap-2 text-xs sm:text-sm text-slate-300 font-medium">
-          {!isPausedOverall ? (
-            <div className="flex items-center gap-1.5 px-2 py-0.5 rounded-full bg-rose-500/20 border border-rose-500/30 text-rose-400 text-xs">
-              <span className="w-2 h-2 rounded-full bg-rose-500 animate-pulse" />
-              <span className="font-bold">LIVE</span>
+          {!isTabVisible || isPaused ? (
+            <div className="flex items-center gap-1.5 px-2 py-0.5 rounded-full bg-amber-500/20 border border-amber-500/30 text-amber-400 text-xs font-bold">
+              <span>PAUSED (SETTINGS OPEN)</span>
             </div>
-          ) : isPaused ? (
-            <div className="flex items-center gap-1.5 px-2 py-0.5 rounded-full bg-amber-500/20 border border-amber-500/30 text-amber-400 text-xs">
-              <span className="font-bold">PAUSED (SETTINGS OPEN)</span>
+          ) : isAllPaused ? (
+            <div className="flex items-center gap-1.5 px-2 py-0.5 rounded-full bg-slate-800 border border-slate-700 text-slate-400 text-xs font-bold">
+              <span>PAUSED</span>
+            </div>
+          ) : pausedCameraIds.size > 0 ? (
+            <div className="flex items-center gap-1.5 px-2 py-0.5 rounded-full bg-amber-500/20 border border-amber-500/30 text-amber-400 text-xs font-bold">
+              <span className="w-1.5 h-1.5 rounded-full bg-amber-400 animate-pulse" />
+              <span>{cameras.length - pausedCameraIds.size} / {cameras.length} LIVE</span>
             </div>
           ) : (
-            <div className="flex items-center gap-1.5 px-2 py-0.5 rounded-full bg-slate-800 border border-slate-700 text-slate-400 text-xs">
-              <span className="font-bold">PAUSED</span>
+            <div className="flex items-center gap-1.5 px-2 py-0.5 rounded-full bg-rose-500/20 border border-rose-500/30 text-rose-400 text-xs font-bold">
+              <span className="w-2 h-2 rounded-full bg-rose-500 animate-pulse" />
+              <span>LIVE</span>
             </div>
           )}
           <span className="text-slate-400">
@@ -413,11 +491,11 @@ export const LiveGrid: React.FC<LiveGridProps> = ({
 
         <div className="flex items-center gap-2">
           <button
-            onClick={() => setIsUserPaused(!isUserPaused)}
-            title={isUserPaused ? 'Resume live camera feeds' : 'Pause live feeds to save bandwidth'}
+            onClick={handleToggleGlobalPause}
+            title={isAnyPaused ? 'Resume all live camera feeds' : 'Pause all live feeds to save bandwidth'}
             className="flex items-center gap-1.5 px-2.5 py-1 text-xs bg-slate-900 hover:bg-slate-850 border border-slate-800 hover:border-slate-700 rounded-lg text-slate-300 hover:text-white transition-colors cursor-pointer"
           >
-            {isUserPaused ? (
+            {isAnyPaused ? (
               <>
                 <Play className="w-3.5 h-3.5 text-emerald-400 fill-current" />
                 <span>Resume Feeds</span>
@@ -454,14 +532,16 @@ export const LiveGrid: React.FC<LiveGridProps> = ({
         }`}
       >
         {cameras.map((cam) => {
-          // If fullscreen is open, pause the background cards to save bandwidth
-          const isCardPaused = isPausedOverall || (fullscreenCam !== null && fullscreenCam.id !== cam.id);
+          // If fullscreen is open, pause all background cards to save bandwidth and camera resources
+          const isBackgroundSuspended = fullscreenCam !== null;
+          const isCardPaused = isCameraPaused(cam.id) || isBackgroundSuspended;
           return (
             <CameraCard
               key={cam.id}
               cam={cam}
               refreshKey={refreshKey}
               isPaused={isCardPaused}
+              onTogglePause={toggleCameraPause}
               onSelectForPlayback={onSelectCameraForPlayback}
               onFullscreen={(c) => setFullscreenCam(c)}
               onOpenDeviceSettings={onOpenDeviceSettings}
@@ -472,47 +552,100 @@ export const LiveGrid: React.FC<LiveGridProps> = ({
       </div>
 
       {/* Fullscreen Camera Modal */}
-      {fullscreenCam && (
-        <div className="fixed inset-0 z-50 bg-black/95 flex flex-col p-2 sm:p-4 md:p-6">
-          <div className="w-full flex items-center justify-between mb-3 text-white shrink-0">
-            <div className="flex items-center gap-2">
-              <div className="flex items-center gap-1.5 px-2 py-0.5 rounded-full bg-rose-500/20 border border-rose-500/40 text-[10px] font-bold text-rose-400 uppercase tracking-wider">
-                <span className="w-1.5 h-1.5 rounded-full bg-rose-500 animate-pulse" />
-                <span>LIVE</span>
+      {fullscreenCam && (() => {
+        const isFsPaused = isCameraPaused(fullscreenCam.id);
+        return (
+          <div className="fixed inset-0 z-50 bg-black/95 flex flex-col p-2 sm:p-4 md:p-6">
+            <div className="w-full flex flex-col md:flex-row md:items-center justify-between gap-2 sm:gap-2.5 mb-2 sm:mb-3 text-white shrink-0">
+              <div className="flex items-center justify-between gap-2 min-w-0">
+                <div className="flex items-center gap-2 min-w-0">
+                  <button
+                    type="button"
+                    onClick={() => toggleCameraPause(fullscreenCam.id)}
+                    title={isFsPaused ? 'Click to resume live stream' : 'Click to pause live stream'}
+                    className={`flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[10px] font-bold uppercase tracking-wider shrink-0 cursor-pointer transition-all active:scale-95 ${
+                      !isFsPaused
+                        ? 'bg-rose-500/20 hover:bg-rose-500/35 border border-rose-500/40 hover:border-rose-500/60 text-rose-400 hover:text-rose-300'
+                        : 'bg-slate-800/90 hover:bg-slate-700 border border-slate-700 hover:border-slate-500 text-slate-300 hover:text-white'
+                    }`}
+                  >
+                    {!isFsPaused ? (
+                      <>
+                        <span className="w-1.5 h-1.5 rounded-full bg-rose-500 animate-pulse" />
+                        <span>LIVE</span>
+                      </>
+                    ) : (
+                      <>
+                        <Play className="w-2.5 h-2.5 text-emerald-400 fill-current" />
+                        <span>PAUSED</span>
+                      </>
+                    )}
+                  </button>
+                  <h3 className="font-bold text-sm sm:text-base md:text-lg truncate">{fullscreenCam.name}</h3>
+                  <span className="text-xs text-slate-400 font-mono hidden sm:inline shrink-0">({fullscreenCam.ip})</span>
+                  {fullscreenCam.has_sub_stream && (
+                    <span className="px-1.5 py-0.5 rounded text-[10px] font-bold bg-blue-500/20 text-blue-400 border border-blue-500/30 shrink-0" title="Main Stream 1 (High Quality)">
+                      HQ • Stream 1
+                    </span>
+                  )}
+                </div>
+                <button
+                  onClick={() => setFullscreenCam(null)}
+                  className="md:hidden h-8 px-2.5 bg-slate-900/90 hover:bg-slate-800 text-slate-200 hover:text-white border border-slate-700/80 text-xs rounded-xl font-semibold cursor-pointer shadow-lg flex items-center gap-1 shrink-0"
+                  title="Close Fullscreen"
+                >
+                  <X className="w-3.5 h-3.5 shrink-0" />
+                  <span>Close</span>
+                </button>
               </div>
-              <h3 className="font-bold text-base sm:text-lg">{fullscreenCam.name}</h3>
-              <span className="text-xs text-slate-400 font-mono">({fullscreenCam.ip})</span>
+              <div className="flex items-center gap-1.5 sm:gap-2 flex-wrap">
+                {fullscreenCam.has_audio_input && (
+                  <LiveAudioPlayer
+                    cameraId={fullscreenCam.id}
+                    cameraName={fullscreenCam.name}
+                  />
+                )}
+                {fullscreenCam.has_audio_output && (
+                  <TalkButton
+                    cameraId={fullscreenCam.id}
+                    cameraName={fullscreenCam.name}
+                    size="sm"
+                  />
+                )}
+                <button
+                  onClick={() => {
+                    onSelectCameraForPlayback(fullscreenCam);
+                    setFullscreenCam(null);
+                  }}
+                  className="h-8 sm:h-9 px-2.5 sm:px-3 bg-blue-600 hover:bg-blue-500 text-white text-xs font-semibold rounded-xl flex items-center gap-1.5 cursor-pointer shadow-lg active:scale-95 transition-all shrink-0"
+                >
+                  <Play className="w-3.5 h-3.5 fill-current shrink-0" />
+                  <span className="hidden sm:inline">Go to </span>
+                  <span>Playback</span>
+                </button>
+                <button
+                  onClick={() => setFullscreenCam(null)}
+                  className="hidden md:flex h-8 sm:h-9 px-2.5 sm:px-3 bg-slate-900/90 hover:bg-slate-800 text-slate-200 hover:text-white border border-slate-700/80 text-xs rounded-xl font-semibold cursor-pointer shadow-lg active:scale-95 transition-all items-center gap-1 shrink-0"
+                  title="Close Fullscreen"
+                >
+                  <X className="w-3.5 h-3.5 shrink-0" />
+                  <span>Close</span>
+                </button>
+              </div>
             </div>
-            <div className="flex items-center gap-2">
-              <button
-                onClick={() => {
-                  onSelectCameraForPlayback(fullscreenCam);
-                  setFullscreenCam(null);
-                }}
-                className="px-3 py-1.5 bg-blue-600 hover:bg-blue-500 text-white text-xs font-medium rounded-lg flex items-center gap-1.5 cursor-pointer"
-              >
-                <Play className="w-3.5 h-3.5 fill-current" />
-                Go to Playback
-              </button>
-              <button
-                onClick={() => setFullscreenCam(null)}
-                className="px-3 py-1.5 bg-slate-800 hover:bg-slate-700 text-slate-300 hover:text-white text-xs rounded-lg font-medium cursor-pointer"
-              >
-                Close
-              </button>
-            </div>
-          </div>
 
-          <div className="relative w-full flex-1 min-h-0 rounded-xl overflow-hidden bg-slate-900 border border-slate-800 shadow-2xl flex items-center justify-center">
-            <LiveStreamView
-              cameraId={fullscreenCam.id}
-              cameraName={fullscreenCam.name}
-              isPaused={isPausedOverall}
-              className="w-full h-full object-contain select-none"
-            />
+            <div className="relative w-full flex-1 min-h-0 rounded-xl overflow-hidden bg-slate-900 border border-slate-800 shadow-2xl flex items-center justify-center">
+              <LiveStreamView
+                cameraId={fullscreenCam.id}
+                cameraName={fullscreenCam.name}
+                isPaused={isFsPaused}
+                stream={1}
+                className="w-full h-full object-contain select-none"
+              />
+            </div>
           </div>
-        </div>
-      )}
+        );
+      })()}
     </div>
   );
 };

@@ -109,6 +109,9 @@ func (db *DB) migrate() error {
 	// Upgrade existing database schemas if column is missing
 	_, _ = db.conn.Exec("ALTER TABLE cached_segments ADD COLUMN media_type TEXT NOT NULL DEFAULT 'video'")
 	_, _ = db.conn.Exec("CREATE INDEX IF NOT EXISTS idx_segments_cam_time ON cached_segments(camera_id, media_type, start_time, end_time)")
+	_, _ = db.conn.Exec("ALTER TABLE cameras ADD COLUMN has_audio_input INTEGER NOT NULL DEFAULT 0")
+	_, _ = db.conn.Exec("ALTER TABLE cameras ADD COLUMN has_audio_output INTEGER NOT NULL DEFAULT 0")
+	_, _ = db.conn.Exec("ALTER TABLE cameras ADD COLUMN has_sub_stream INTEGER NOT NULL DEFAULT 1")
 
 	return nil
 }
@@ -154,7 +157,7 @@ func (db *DB) UpdateUserPassword(username, newHash string) error {
 
 // Camera methods
 func (db *DB) ListCameras() ([]models.Camera, error) {
-	rows, err := db.conn.Query("SELECT id, name, path, ip, username, password, is_isapi, enabled, sort_order, created_at, updated_at FROM cameras ORDER BY sort_order ASC, id ASC")
+	rows, err := db.conn.Query("SELECT id, name, path, ip, username, password, is_isapi, enabled, sort_order, COALESCE(has_audio_input, 0), COALESCE(has_audio_output, 0), COALESCE(has_sub_stream, 1), created_at, updated_at FROM cameras ORDER BY sort_order ASC, id ASC")
 	if err != nil {
 		return nil, err
 	}
@@ -163,13 +166,16 @@ func (db *DB) ListCameras() ([]models.Camera, error) {
 	var cameras []models.Camera
 	for rows.Next() {
 		var c models.Camera
-		var isISAPI, enabled int
+		var isISAPI, enabled, hasAudioIn, hasAudioOut, hasSubStream int
 		var createdAt, updatedAt string
-		if err := rows.Scan(&c.ID, &c.Name, &c.Path, &c.IP, &c.Username, &c.Password, &isISAPI, &enabled, &c.SortOrder, &createdAt, &updatedAt); err != nil {
+		if err := rows.Scan(&c.ID, &c.Name, &c.Path, &c.IP, &c.Username, &c.Password, &isISAPI, &enabled, &c.SortOrder, &hasAudioIn, &hasAudioOut, &hasSubStream, &createdAt, &updatedAt); err != nil {
 			return nil, err
 		}
 		c.IsISAPI = isISAPI != 0
 		c.Enabled = enabled != 0
+		c.HasAudioInput = hasAudioIn != 0
+		c.HasAudioOutput = hasAudioOut != 0
+		c.HasSubStream = hasSubStream != 0
 		c.CreatedAt, _ = time.Parse(time.RFC3339, createdAt)
 		c.UpdatedAt, _ = time.Parse(time.RFC3339, updatedAt)
 		cameras = append(cameras, c)
@@ -179,15 +185,18 @@ func (db *DB) ListCameras() ([]models.Camera, error) {
 
 func (db *DB) GetCamera(id int64) (*models.Camera, error) {
 	var c models.Camera
-	var isISAPI, enabled int
+	var isISAPI, enabled, hasAudioIn, hasAudioOut, hasSubStream int
 	var createdAt, updatedAt string
-	err := db.conn.QueryRow("SELECT id, name, path, ip, username, password, is_isapi, enabled, sort_order, created_at, updated_at FROM cameras WHERE id = ?", id).
-		Scan(&c.ID, &c.Name, &c.Path, &c.IP, &c.Username, &c.Password, &isISAPI, &enabled, &c.SortOrder, &createdAt, &updatedAt)
+	err := db.conn.QueryRow("SELECT id, name, path, ip, username, password, is_isapi, enabled, sort_order, COALESCE(has_audio_input, 0), COALESCE(has_audio_output, 0), COALESCE(has_sub_stream, 1), created_at, updated_at FROM cameras WHERE id = ?", id).
+		Scan(&c.ID, &c.Name, &c.Path, &c.IP, &c.Username, &c.Password, &isISAPI, &enabled, &c.SortOrder, &hasAudioIn, &hasAudioOut, &hasSubStream, &createdAt, &updatedAt)
 	if err != nil {
 		return nil, err
 	}
 	c.IsISAPI = isISAPI != 0
 	c.Enabled = enabled != 0
+	c.HasAudioInput = hasAudioIn != 0
+	c.HasAudioOutput = hasAudioOut != 0
+	c.HasSubStream = hasSubStream != 0
 	c.CreatedAt, _ = time.Parse(time.RFC3339, createdAt)
 	c.UpdatedAt, _ = time.Parse(time.RFC3339, updatedAt)
 	return &c, nil
@@ -203,10 +212,22 @@ func (db *DB) CreateCamera(c *models.Camera) error {
 	if c.Enabled {
 		enabled = 1
 	}
+	hasAudioIn := 0
+	if c.HasAudioInput {
+		hasAudioIn = 1
+	}
+	hasAudioOut := 0
+	if c.HasAudioOutput {
+		hasAudioOut = 1
+	}
+	hasSubStream := 0
+	if c.HasSubStream {
+		hasSubStream = 1
+	}
 
 	res, err := db.conn.Exec(
-		"INSERT INTO cameras (name, path, ip, username, password, is_isapi, enabled, sort_order, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
-		c.Name, c.Path, c.IP, c.Username, c.Password, isISAPI, enabled, c.SortOrder, now, now,
+		"INSERT INTO cameras (name, path, ip, username, password, is_isapi, enabled, sort_order, has_audio_input, has_audio_output, has_sub_stream, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+		c.Name, c.Path, c.IP, c.Username, c.Password, isISAPI, enabled, c.SortOrder, hasAudioIn, hasAudioOut, hasSubStream, now, now,
 	)
 	if err != nil {
 		return err
@@ -225,9 +246,21 @@ func (db *DB) UpdateCamera(c *models.Camera) error {
 	if c.Enabled {
 		enabled = 1
 	}
+	hasAudioIn := 0
+	if c.HasAudioInput {
+		hasAudioIn = 1
+	}
+	hasAudioOut := 0
+	if c.HasAudioOutput {
+		hasAudioOut = 1
+	}
+	hasSubStream := 0
+	if c.HasSubStream {
+		hasSubStream = 1
+	}
 
-	query := "UPDATE cameras SET name=?, path=?, ip=?, username=?, is_isapi=?, enabled=?, sort_order=?, updated_at=?"
-	args := []interface{}{c.Name, c.Path, c.IP, c.Username, isISAPI, enabled, c.SortOrder, now}
+	query := "UPDATE cameras SET name=?, path=?, ip=?, username=?, is_isapi=?, enabled=?, sort_order=?, has_audio_input=?, has_audio_output=?, has_sub_stream=?, updated_at=?"
+	args := []interface{}{c.Name, c.Path, c.IP, c.Username, isISAPI, enabled, c.SortOrder, hasAudioIn, hasAudioOut, hasSubStream, now}
 
 	if c.Password != "" {
 		query += ", password=?"
@@ -238,6 +271,28 @@ func (db *DB) UpdateCamera(c *models.Camera) error {
 	args = append(args, c.ID)
 
 	_, err := db.conn.Exec(query, args...)
+	return err
+}
+
+func (db *DB) UpdateCameraAudioCapabilities(id int64, hasInput, hasOutput bool) error {
+	inVal := 0
+	if hasInput {
+		inVal = 1
+	}
+	outVal := 0
+	if hasOutput {
+		outVal = 1
+	}
+	_, err := db.conn.Exec("UPDATE cameras SET has_audio_input=?, has_audio_output=? WHERE id=?", inVal, outVal, id)
+	return err
+}
+
+func (db *DB) UpdateCameraStreamCapabilities(id int64, hasSubStream bool) error {
+	subVal := 0
+	if hasSubStream {
+		subVal = 1
+	}
+	_, err := db.conn.Exec("UPDATE cameras SET has_sub_stream=? WHERE id=?", subVal, id)
 	return err
 }
 

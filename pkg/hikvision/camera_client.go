@@ -2,6 +2,7 @@ package hikvision
 
 import (
 	"bytes"
+	"context"
 	"crypto/md5"
 	"crypto/rand"
 	"encoding/hex"
@@ -9,6 +10,7 @@ import (
 	"io"
 	"net/http"
 	"net/url"
+	"os/exec"
 	"strings"
 	"sync"
 	"time"
@@ -324,4 +326,216 @@ func randomHex(n int) string {
 	bytes := make([]byte, n)
 	_, _ = rand.Read(bytes)
 	return hex.EncodeToString(bytes)
+}
+
+// DetectAudioCapabilities checks whether the camera supports audio input (microphone/recording audio)
+// and audio output (speaker/two-way audio talkback).
+func (c *CameraClient) DetectAudioCapabilities(ip, username, password string, isISAPI bool) (bool, bool, error) {
+	if ip == "" {
+		return false, false, fmt.Errorf("camera IP is empty")
+	}
+
+	hasInput := false
+	hasOutput := false
+
+	if isISAPI {
+		// 1. Check TwoWayAudio channels (speaker / output)
+		twoWayData, code, _, err := c.DoRequest(ip, username, password, "GET", "/ISAPI/System/TwoWayAudio/channels", nil, "")
+		if err == nil && code == http.StatusOK && strings.Contains(string(twoWayData), "<TwoWayAudioChannel") {
+			hasOutput = true
+			hasInput = true // Cameras with speaker also support audio input
+		}
+
+		// 2. Check Audio channels (microphone / input)
+		if !hasInput {
+			audioData, code, _, err := c.DoRequest(ip, username, password, "GET", "/ISAPI/System/Audio/channels", nil, "")
+			if err == nil && code == http.StatusOK && strings.Contains(string(audioData), "<AudioChannel") {
+				hasInput = true
+			}
+		}
+	}
+
+	// 3. Fallback or non-ISAPI check: probe RTSP mainstream audio track with ffprobe
+	if !hasInput && username != "" {
+		rtspURL := fmt.Sprintf("rtsp://%s:%s@%s:554/Streaming/Channels/101", url.QueryEscape(username), url.QueryEscape(password), ip)
+		ctx, cancel := context.WithTimeout(context.Background(), 2500*time.Millisecond)
+		defer cancel()
+		cmd := exec.CommandContext(ctx, "ffprobe", "-rtsp_transport", "tcp", "-select_streams", "a", "-show_entries", "stream=codec_type", "-of", "csv=p=0", rtspURL)
+		out, probeErr := cmd.Output()
+		if probeErr == nil && strings.Contains(string(out), "audio") {
+			hasInput = true
+		}
+	}
+
+	return hasInput, hasOutput, nil
+}
+
+// DetectStreamCapabilities checks whether the camera supports a 2nd stream (sub-stream / channel 102).
+func (c *CameraClient) DetectStreamCapabilities(ip, username, password string, isISAPI bool) (bool, error) {
+	if ip == "" {
+		return false, fmt.Errorf("camera IP is empty")
+	}
+
+	// 1. Try fast HTTP stream query endpoints (ISAPI and legacy)
+	httpPaths := []string{
+		"/ISAPI/Streaming/channels/102",
+		"/ISAPI/Streaming/Channels/102",
+		"/Streaming/channels/102",
+		"/Streaming/Channels/102",
+	}
+	for _, p := range httpPaths {
+		data, code, _, err := c.DoRequest(ip, username, password, "GET", p, nil, "")
+		if err == nil && code == http.StatusOK && len(data) > 0 {
+			return true, nil
+		}
+	}
+
+	// Also check /ISAPI/Streaming/channels list
+	data, code, _, err := c.DoRequest(ip, username, password, "GET", "/ISAPI/Streaming/channels", nil, "")
+	if err == nil && code == http.StatusOK {
+		body := string(data)
+		if strings.Contains(body, "<StreamingChannel") && (strings.Contains(body, "102") || strings.Contains(body, "sub")) {
+			return true, nil
+		}
+	}
+
+	// 2. RTSP probe with ffprobe on channel 102 / sub stream (fallback)
+	if username != "" {
+		userEsc := url.QueryEscape(username)
+		passEsc := url.QueryEscape(password)
+		candidates := []string{
+			fmt.Sprintf("rtsp://%s:%s@%s:554/Streaming/channels/102", userEsc, passEsc, ip),
+			fmt.Sprintf("rtsp://%s:%s@%s:554/Streaming/Channels/102", userEsc, passEsc, ip),
+			fmt.Sprintf("rtsp://%s:%s@%s:554/h264/ch1/sub/av_stream", userEsc, passEsc, ip),
+		}
+		for _, rtspURL := range candidates {
+			ctx, cancel := context.WithTimeout(context.Background(), 3500*time.Millisecond)
+			cmd := exec.CommandContext(ctx, "ffprobe", "-rtsp_transport", "tcp", "-select_streams", "v:0", "-show_entries", "stream=codec_type", "-of", "csv=p=0", rtspURL)
+			out, err := cmd.Output()
+			cancel()
+			if err == nil && strings.Contains(string(out), "video") {
+				return true, nil
+			}
+		}
+	}
+
+	return false, nil
+}
+
+// SendTwoWayAudio streams an audio snippet (encoded as G.711 A-law 8000Hz mono) to the camera speaker.
+func (c *CameraClient) SendTwoWayAudio(ip, username, password string, alawData []byte) error {
+	if len(alawData) == 0 {
+		return fmt.Errorf("empty audio data")
+	}
+
+	client := &http.Client{Timeout: 10 * time.Second}
+
+	// 1. Ensure any previous session on channel 1 is closed
+	_, _, _ = c.sendRequestWithFreshDigest(client, "PUT", "/ISAPI/System/TwoWayAudio/channels/1/close", ip, username, password, nil, "")
+
+	// 2. Open channel 1
+	openBody, openCode, err := c.sendRequestWithFreshDigest(client, "PUT", "/ISAPI/System/TwoWayAudio/channels/1/open", ip, username, password, nil, "")
+	if err != nil {
+		return fmt.Errorf("failed to open two-way audio channel: %w", err)
+	}
+	if openCode != http.StatusOK {
+		return fmt.Errorf("camera rejected two-way audio open (status %d): %s", openCode, string(openBody))
+	}
+
+	// 3. Stream audio data with Content-Type: application/octet-stream
+	dataBody, dataCode, err := c.sendRequestWithFreshDigest(client, "PUT", "/ISAPI/System/TwoWayAudio/channels/1/audioData", ip, username, password, alawData, "application/octet-stream")
+	if err != nil {
+		_, _, _ = c.sendRequestWithFreshDigest(client, "PUT", "/ISAPI/System/TwoWayAudio/channels/1/close", ip, username, password, nil, "")
+		return fmt.Errorf("failed to transmit audio data: %w", err)
+	}
+	if dataCode != http.StatusOK && dataCode != http.StatusNoContent {
+		_, _, _ = c.sendRequestWithFreshDigest(client, "PUT", "/ISAPI/System/TwoWayAudio/channels/1/close", ip, username, password, nil, "")
+		return fmt.Errorf("camera returned error on audioData (status %d): %s", dataCode, string(dataBody))
+	}
+
+	// 4. Close channel 1
+	_, _, _ = c.sendRequestWithFreshDigest(client, "PUT", "/ISAPI/System/TwoWayAudio/channels/1/close", ip, username, password, nil, "")
+
+	return nil
+}
+
+func (c *CameraClient) sendRequestWithFreshDigest(client *http.Client, method, urlPath, ip, user, pass string, data []byte, contentType string) ([]byte, int, error) {
+	if client == nil {
+		client = c.client
+	}
+	fullURL := fmt.Sprintf("http://%s%s", ip, urlPath)
+
+	// Probe for 401 challenge without sending payload body
+	probeReq, err := http.NewRequest(method, fullURL, nil)
+	if err != nil {
+		return nil, 0, err
+	}
+	probeResp, err := client.Do(probeReq)
+	if err != nil {
+		return nil, 0, err
+	}
+	defer probeResp.Body.Close()
+
+	if probeResp.StatusCode != http.StatusUnauthorized {
+		b, err := io.ReadAll(probeResp.Body)
+		return b, probeResp.StatusCode, err
+	}
+
+	authHeader := probeResp.Header.Get("WWW-Authenticate")
+	params := parseDigestHeader(authHeader)
+
+	realm := params["realm"]
+	nonce := params["nonce"]
+	qop := params["qop"]
+	opaque := params["opaque"]
+	nc := "00000001"
+	cnonce := randomHex(8)
+
+	ha1 := md5Hex(fmt.Sprintf("%s:%s:%s", user, realm, pass))
+	ha2 := md5Hex(fmt.Sprintf("%s:%s", method, urlPath))
+	var response string
+	if strings.Contains(qop, "auth") {
+		response = md5Hex(fmt.Sprintf("%s:%s:%s:%s:auth:%s", ha1, nonce, nc, cnonce, ha2))
+	} else {
+		response = md5Hex(fmt.Sprintf("%s:%s:%s", ha1, nonce, ha2))
+	}
+
+	authVal := fmt.Sprintf(`Digest username="%s", realm="%s", nonce="%s", uri="%s", response="%s"`,
+		user, realm, nonce, urlPath, response)
+	if strings.Contains(qop, "auth") {
+		authVal += fmt.Sprintf(`, qop="auth", nc=%s, cnonce="%s"`, nc, cnonce)
+	}
+	if opaque != "" {
+		authVal += fmt.Sprintf(`, opaque="%s"`, opaque)
+	}
+
+	var bodyReader io.Reader
+	if len(data) > 0 {
+		bodyReader = bytes.NewReader(data)
+	}
+	req, err := http.NewRequest(method, fullURL, bodyReader)
+	if err != nil {
+		return nil, 0, err
+	}
+	req.Close = true
+	req.Header.Set("Authorization", authVal)
+	if contentType != "" {
+		req.Header.Set("Content-Type", contentType)
+	}
+	if len(data) > 0 {
+		req.ContentLength = int64(len(data))
+	}
+
+	resp, err := client.Do(req)
+	if err != nil {
+		return nil, 0, err
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode == http.StatusOK {
+		return []byte("<ok/>"), resp.StatusCode, nil
+	}
+
+	respBody, err := io.ReadAll(resp.Body)
+	return respBody, resp.StatusCode, err
 }

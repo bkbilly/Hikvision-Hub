@@ -10,41 +10,50 @@ type Camera struct {
 	IP         string    `json:"ip"`
 	Username   string    `json:"username"`
 	Password   string    `json:"password,omitempty"` // Omitted in public responses
-	IsISAPI    bool      `json:"is_isapi"`           // true if camera uses /ISAPI/ endpoints
-	Enabled    bool      `json:"enabled"`
-	SortOrder  int       `json:"sort_order"`
-	CreatedAt  time.Time `json:"created_at"`
-	UpdatedAt  time.Time `json:"updated_at"`
+	IsISAPI        bool      `json:"is_isapi"`           // true if camera uses /ISAPI/ endpoints
+	Enabled        bool      `json:"enabled"`
+	SortOrder      int       `json:"sort_order"`
+	HasAudioInput  bool      `json:"has_audio_input"`    // Camera microphone / recording audio
+	HasAudioOutput bool      `json:"has_audio_output"`   // Camera speaker / two-way audio
+	HasSubStream   bool      `json:"has_sub_stream"`     // Camera supports 2nd stream (sub-stream)
+	CreatedAt      time.Time `json:"created_at"`
+	UpdatedAt      time.Time `json:"updated_at"`
 }
 
 // CameraPublic is safe for sending to clients (omits raw password or marks if configured).
 type CameraPublic struct {
-	ID        int64     `json:"id"`
-	Name      string    `json:"name"`
-	Path      string    `json:"path"`
-	IP        string    `json:"ip"`
-	Username  string    `json:"username"`
-	HasPass   bool      `json:"has_password"`
-	IsISAPI   bool      `json:"is_isapi"`
-	Enabled   bool      `json:"enabled"`
-	SortOrder int       `json:"sort_order"`
-	CreatedAt time.Time `json:"created_at"`
-	UpdatedAt time.Time `json:"updated_at"`
+	ID             int64     `json:"id"`
+	Name           string    `json:"name"`
+	Path           string    `json:"path"`
+	IP             string    `json:"ip"`
+	Username       string    `json:"username"`
+	HasPass        bool      `json:"has_password"`
+	IsISAPI        bool      `json:"is_isapi"`
+	Enabled        bool      `json:"enabled"`
+	SortOrder      int       `json:"sort_order"`
+	HasAudioInput  bool      `json:"has_audio_input"`
+	HasAudioOutput bool      `json:"has_audio_output"`
+	HasSubStream   bool      `json:"has_sub_stream"`
+	CreatedAt      time.Time `json:"created_at"`
+	UpdatedAt      time.Time `json:"updated_at"`
 }
 
 func (c *Camera) ToPublic() CameraPublic {
 	return CameraPublic{
-		ID:        c.ID,
-		Name:      c.Name,
-		Path:      c.Path,
-		IP:        c.IP,
-		Username:  c.Username,
-		HasPass:   c.Password != "",
-		IsISAPI:   c.IsISAPI,
-		Enabled:   c.Enabled,
-		SortOrder: c.SortOrder,
-		CreatedAt: c.CreatedAt,
-		UpdatedAt: c.UpdatedAt,
+		ID:             c.ID,
+		Name:           c.Name,
+		Path:           c.Path,
+		IP:             c.IP,
+		Username:       c.Username,
+		HasPass:        c.Password != "",
+		IsISAPI:        c.IsISAPI,
+		Enabled:        c.Enabled,
+		SortOrder:      c.SortOrder,
+		HasAudioInput:  c.HasAudioInput,
+		HasAudioOutput: c.HasAudioOutput,
+		HasSubStream:   c.HasSubStream,
+		CreatedAt:      c.CreatedAt,
+		UpdatedAt:      c.UpdatedAt,
 	}
 }
 

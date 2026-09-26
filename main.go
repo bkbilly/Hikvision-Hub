@@ -90,6 +90,27 @@ func main() {
 	alertManager.Start(ctx, initialCameras)
 	defer alertManager.Stop()
 
+	// Probe and auto-detect audio and stream capabilities for cameras in background
+	go func() {
+		for _, cam := range initialCameras {
+			if cam.IP == "" || cam.Username == "" {
+				continue
+			}
+			hasIn, hasOut, err := camClient.DetectAudioCapabilities(cam.IP, cam.Username, cam.Password, cam.IsISAPI)
+			if err == nil {
+				_ = database.UpdateCameraAudioCapabilities(cam.ID, hasIn, hasOut)
+				if hasIn || hasOut {
+					log.Printf("[Audio] Camera %q (%s): input (mic)=%v, output (speaker)=%v", cam.Name, cam.IP, hasIn, hasOut)
+				}
+			}
+			hasSub, err := camClient.DetectStreamCapabilities(cam.IP, cam.Username, cam.Password, cam.IsISAPI)
+			if err == nil {
+				_ = database.UpdateCameraStreamCapabilities(cam.ID, hasSub)
+				log.Printf("[Stream] Camera %q (%s): sub-stream (2nd stream)=%v", cam.Name, cam.IP, hasSub)
+			}
+		}
+	}()
+
 	// Start background crawler (every 10 minutes)
 	crawler.StartBackgroundSync(ctx, 10*time.Minute)
 

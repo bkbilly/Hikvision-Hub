@@ -154,17 +154,64 @@ export const api = {
     return `${API_BASE}/cameras/${cameraId}/snapshot?t=${t}${token ? `&token=${encodeURIComponent(token)}` : ''}`;
   },
 
-  getLiveStreamUrl: (cameraId: number) => {
+  getLiveStreamUrl: (cameraId: number, stream?: number) => {
     const token = getAuthToken();
-    return `${API_BASE}/cameras/${cameraId}/live?t=${Date.now()}${token ? `&token=${encodeURIComponent(token)}` : ''}`;
+    let url = `${API_BASE}/cameras/${cameraId}/live?t=${Date.now()}`;
+    if (stream) {
+      url += `&stream=${stream}`;
+    }
+    if (token) {
+      url += `&token=${encodeURIComponent(token)}`;
+    }
+    return url;
   },
 
-  getLiveWsUrl: (cameraId: number) => {
+  getLiveAudioUrl: (cameraId: number) => {
+    const token = getAuthToken();
+    return `${API_BASE}/cameras/${cameraId}/live/audio?t=${Date.now()}${token ? `&token=${encodeURIComponent(token)}` : ''}`;
+  },
+
+  sendAudioToCamera: async (cameraId: number, audioBlob: Blob) => {
+    const token = getAuthToken();
+    const headers = new Headers();
+    if (token) {
+      headers.set('Authorization', `Bearer ${token}`);
+    }
+    headers.set('Content-Type', audioBlob.type || 'application/octet-stream');
+
+    const res = await fetch(`${API_BASE}/cameras/${cameraId}/talk`, {
+      method: 'POST',
+      headers,
+      body: audioBlob,
+      credentials: 'include',
+    });
+
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({ error: res.statusText }));
+      throw new Error(err.error || `Failed to speak to camera: ${res.status}`);
+    }
+
+    return res.json() as Promise<{ success: boolean; bytes?: number }>;
+  },
+
+  detectAudioCapabilities: (cameraId: number) =>
+    request<{ success: boolean; has_audio_input: boolean; has_audio_output: boolean; has_sub_stream?: boolean }>(`/cameras/${cameraId}/detect-audio`, {
+      method: 'POST',
+    }),
+
+  getLiveWsUrl: (cameraId: number, stream?: number) => {
     const token = getAuthToken();
     const loc = window.location;
     const protocol = loc.protocol === 'https:' ? 'wss:' : 'ws:';
     const host = loc.host;
-    return `${protocol}//${host}/api/ws/live?cameraId=${cameraId}${token ? `&token=${encodeURIComponent(token)}` : ''}`;
+    let url = `${protocol}//${host}/api/ws/live?cameraId=${cameraId}`;
+    if (stream) {
+      url += `&stream=${stream}`;
+    }
+    if (token) {
+      url += `&token=${encodeURIComponent(token)}`;
+    }
+    return url;
   },
 
   getEventsWsUrl: () => {

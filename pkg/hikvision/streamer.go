@@ -199,33 +199,39 @@ func (s *Streamer) extractAndRemuxMP4(ctx context.Context, dataDirPath string, d
 
 	var cmd *exec.Cmd
 	if resKey == "orig" {
-		// Fast stream copy (usually 10-30ms)
+		// Fast stream copy (usually 10-30ms) with AAC audio encoding if audio stream present
 		cmd = exec.CommandContext(
 			cmdCtx,
 			"ffmpeg", "-y",
 			"-fflags", "+genpts",
 			"-i", tempRawPath,
 			"-threads", "auto",
+			"-map", "0:v:0",
+			"-map", "0:a?",
 			"-c:v", "copy",
-			"-an",
+			"-c:a", "aac",
+			"-b:a", "64k",
 			"-avoid_negative_ts", "make_zero",
 			"-movflags", "+faststart",
 			"-f", "mp4",
 			tempOutPath,
 		)
 	} else {
-		// Transcode to specific resolution
+		// Transcode to specific resolution with AAC audio if present
 		cmd = exec.CommandContext(
 			cmdCtx,
 			"ffmpeg", "-y",
 			"-fflags", "+genpts",
 			"-i", tempRawPath,
 			"-threads", "auto",
+			"-map", "0:v:0",
+			"-map", "0:a?",
 			"-s", resKey,
 			"-c:v", "libx264",
 			"-preset", "veryfast",
 			"-crf", "23",
-			"-an",
+			"-c:a", "aac",
+			"-b:a", "64k",
 			"-avoid_negative_ts", "make_zero",
 			"-movflags", "+faststart",
 			"-f", "mp4",
@@ -246,10 +252,13 @@ func (s *Streamer) extractAndRemuxMP4(ctx context.Context, dataDirPath string, d
 			"-fflags", "+genpts",
 			"-i", tempRawPath,
 			"-threads", "auto",
+			"-map", "0:v:0",
+			"-map", "0:a?",
 			"-c:v", "libx264",
 			"-preset", "ultrafast",
 			"-crf", "22",
-			"-an",
+			"-c:a", "aac",
+			"-b:a", "64k",
 			"-avoid_negative_ts", "make_zero",
 			"-movflags", "+faststart",
 			"-f", "mp4",
@@ -257,7 +266,46 @@ func (s *Streamer) extractAndRemuxMP4(ctx context.Context, dataDirPath string, d
 		)
 		fallbackCmd.Stderr = &fallbackStderr
 		if fallbackErr := fallbackCmd.Run(); fallbackErr != nil {
-			return "", fmt.Errorf("ffmpeg remuxing and fallback failed: %w (stderr: %s)", fallbackErr, fallbackStderr.String())
+			log.Printf("[Streamer] Remux with audio failed (%v), attempting video-only fallback: %s", fallbackErr, fallbackStderr.String())
+			var voStderr bytes.Buffer
+			voCmd := exec.CommandContext(
+				cmdCtx,
+				"ffmpeg", "-y",
+				"-fflags", "+genpts",
+				"-i", tempRawPath,
+				"-threads", "auto",
+				"-map", "0:v:0",
+				"-an",
+				"-c:v", "copy",
+				"-avoid_negative_ts", "make_zero",
+				"-movflags", "+faststart",
+				"-f", "mp4",
+				tempOutPath,
+			)
+			voCmd.Stderr = &voStderr
+			if voErr := voCmd.Run(); voErr != nil {
+				var transcodeStderr bytes.Buffer
+				transcodeCmd := exec.CommandContext(
+					cmdCtx,
+					"ffmpeg", "-y",
+					"-fflags", "+genpts",
+					"-i", tempRawPath,
+					"-threads", "auto",
+					"-map", "0:v:0",
+					"-an",
+					"-c:v", "libx264",
+					"-preset", "ultrafast",
+					"-crf", "22",
+					"-avoid_negative_ts", "make_zero",
+					"-movflags", "+faststart",
+					"-f", "mp4",
+					tempOutPath,
+				)
+				transcodeCmd.Stderr = &transcodeStderr
+				if tErr := transcodeCmd.Run(); tErr != nil {
+					return "", fmt.Errorf("ffmpeg remuxing and fallbacks failed: %w (stderr: %s)", tErr, transcodeStderr.String())
+				}
+			}
 		}
 	}
 

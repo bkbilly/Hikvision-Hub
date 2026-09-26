@@ -1,6 +1,7 @@
 package api
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -111,6 +112,14 @@ func (h *CameraHandler) Create(w http.ResponseWriter, r *http.Request) {
 		SortOrder: req.SortOrder,
 	}
 
+	if cam.IP != "" && cam.Username != "" {
+		hasIn, hasOut, _ := h.camClient.DetectAudioCapabilities(cam.IP, cam.Username, cam.Password, cam.IsISAPI)
+		cam.HasAudioInput = hasIn
+		cam.HasAudioOutput = hasOut
+		hasSub, _ := h.camClient.DetectStreamCapabilities(cam.IP, cam.Username, cam.Password, cam.IsISAPI)
+		cam.HasSubStream = hasSub
+	}
+
 	if err := h.db.CreateCamera(cam); err != nil {
 		writeJSONError(w, "Failed to create camera: "+err.Error(), http.StatusInternalServerError)
 		return
@@ -157,6 +166,14 @@ func (h *CameraHandler) Update(w http.ResponseWriter, r *http.Request) {
 	cam.IsISAPI = req.IsISAPI
 	cam.Enabled = req.Enabled
 	cam.SortOrder = req.SortOrder
+
+	if cam.IP != "" && cam.Username != "" {
+		hasIn, hasOut, _ := h.camClient.DetectAudioCapabilities(cam.IP, cam.Username, cam.Password, cam.IsISAPI)
+		cam.HasAudioInput = hasIn
+		cam.HasAudioOutput = hasOut
+		hasSub, _ := h.camClient.DetectStreamCapabilities(cam.IP, cam.Username, cam.Password, cam.IsISAPI)
+		cam.HasSubStream = hasSub
+	}
 
 	if err := h.db.UpdateCamera(cam); err != nil {
 		writeJSONError(w, "Failed to update camera: "+err.Error(), http.StatusInternalServerError)
@@ -254,10 +271,20 @@ func (h *CameraHandler) TestConnection(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	hasIn, hasOut, _ := h.camClient.DetectAudioCapabilities(req.IP, req.Username, req.Password, isISAPI)
+	hasSub, _ := h.camClient.DetectStreamCapabilities(req.IP, req.Username, req.Password, isISAPI)
+	if req.CameraID != nil && *req.CameraID > 0 {
+		_ = h.db.UpdateCameraAudioCapabilities(*req.CameraID, hasIn, hasOut)
+		_ = h.db.UpdateCameraStreamCapabilities(*req.CameraID, hasSub)
+	}
+
 	writeJSON(w, http.StatusOK, map[string]interface{}{
-		"success":  true,
-		"message":  msg,
-		"is_isapi": isISAPI,
+		"success":          true,
+		"message":          msg,
+		"is_isapi":         isISAPI,
+		"has_audio_input":  hasIn,
+		"has_audio_output": hasOut,
+		"has_sub_stream":   hasSub,
 	})
 }
 
@@ -290,6 +317,60 @@ func (h *CameraHandler) Snapshot(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Cache-Control", "no-cache, no-store, must-revalidate")
 	w.WriteHeader(http.StatusOK)
 	_, _ = w.Write(data)
+}
+
+// GetLiveRTSPCandidates returns candidate RTSP URLs for a camera based on requested stream number and capability.
+// requestedStream: 1 (main / quality) or 2 (sub / speed).
+func GetLiveRTSPCandidates(cam *models.Camera, requestedStream int) (candidates []string, isHighQuality bool) {
+	userEsc := url.QueryEscape(cam.Username)
+	passEsc := url.QueryEscape(cam.Password)
+
+	targetStream := requestedStream
+	if targetStream == 2 && !cam.HasSubStream {
+		targetStream = 1
+	}
+	if targetStream != 1 && targetStream != 2 {
+		targetStream = 2
+		if !cam.HasSubStream {
+			targetStream = 1
+		}
+	}
+
+	if targetStream == 1 {
+		// Quality stream: Channel 101 / main stream first
+		if cam.IsISAPI {
+			candidates = []string{
+				fmt.Sprintf("rtsp://%s:%s@%s:554/Streaming/Channels/101", userEsc, passEsc, cam.IP),
+				fmt.Sprintf("rtsp://%s:%s@%s:554/h264/ch1/main/av_stream", userEsc, passEsc, cam.IP),
+				fmt.Sprintf("rtsp://%s:%s@%s:554/Streaming/Channels/102", userEsc, passEsc, cam.IP),
+			}
+		} else {
+			candidates = []string{
+				fmt.Sprintf("rtsp://%s:%s@%s:554/Streaming/channels/101", userEsc, passEsc, cam.IP),
+				fmt.Sprintf("rtsp://%s:%s@%s:554/h264/ch1/main/av_stream", userEsc, passEsc, cam.IP),
+				fmt.Sprintf("rtsp://%s:%s@%s:554/Streaming/channels/102", userEsc, passEsc, cam.IP),
+				fmt.Sprintf("rtsp://%s:%s@%s:554/Streaming/Channels/101", userEsc, passEsc, cam.IP),
+			}
+		}
+		return candidates, true
+	}
+
+	// Speed stream: Channel 102 / sub stream first
+	if cam.IsISAPI {
+		candidates = []string{
+			fmt.Sprintf("rtsp://%s:%s@%s:554/Streaming/Channels/102", userEsc, passEsc, cam.IP),
+			fmt.Sprintf("rtsp://%s:%s@%s:554/h264/ch1/sub/av_stream", userEsc, passEsc, cam.IP),
+			fmt.Sprintf("rtsp://%s:%s@%s:554/Streaming/Channels/101", userEsc, passEsc, cam.IP),
+		}
+	} else {
+		candidates = []string{
+			fmt.Sprintf("rtsp://%s:%s@%s:554/Streaming/channels/102", userEsc, passEsc, cam.IP),
+			fmt.Sprintf("rtsp://%s:%s@%s:554/h264/ch1/sub/av_stream", userEsc, passEsc, cam.IP),
+			fmt.Sprintf("rtsp://%s:%s@%s:554/Streaming/channels/101", userEsc, passEsc, cam.IP),
+			fmt.Sprintf("rtsp://%s:%s@%s:554/Streaming/Channels/102", userEsc, passEsc, cam.IP),
+		}
+	}
+	return candidates, false
 }
 
 func (h *CameraHandler) StreamLive(w http.ResponseWriter, r *http.Request) {
@@ -326,23 +407,20 @@ func (h *CameraHandler) StreamLive(w http.ResponseWriter, r *http.Request) {
 	}
 
 	ctx := r.Context()
-	userEsc := url.QueryEscape(cam.Username)
-	passEsc := url.QueryEscape(cam.Password)
+	streamParam := r.URL.Query().Get("stream")
+	requestedStream := 2
+	if streamParam == "1" || streamParam == "main" || streamParam == "101" {
+		requestedStream = 1
+	} else if streamParam == "2" || streamParam == "sub" || streamParam == "102" {
+		requestedStream = 2
+	}
 
-	var rtspCandidates []string
-	if cam.IsISAPI {
-		rtspCandidates = []string{
-			fmt.Sprintf("rtsp://%s:%s@%s:554/Streaming/Channels/102", userEsc, passEsc, cam.IP),
-			fmt.Sprintf("rtsp://%s:%s@%s:554/Streaming/Channels/101", userEsc, passEsc, cam.IP),
-			fmt.Sprintf("rtsp://%s:%s@%s:554/h264/ch1/sub/av_stream", userEsc, passEsc, cam.IP),
-		}
-	} else {
-		rtspCandidates = []string{
-			fmt.Sprintf("rtsp://%s:%s@%s:554/Streaming/channels/102", userEsc, passEsc, cam.IP),
-			fmt.Sprintf("rtsp://%s:%s@%s:554/h264/ch1/sub/av_stream", userEsc, passEsc, cam.IP),
-			fmt.Sprintf("rtsp://%s:%s@%s:554/Streaming/channels/101", userEsc, passEsc, cam.IP),
-			fmt.Sprintf("rtsp://%s:%s@%s:554/Streaming/Channels/102", userEsc, passEsc, cam.IP),
-		}
+	rtspCandidates, isHQ := GetLiveRTSPCandidates(cam, requestedStream)
+	qVal := "5"
+	rVal := "10"
+	if isHQ {
+		qVal = "3"
+		rVal = "15"
 	}
 
 	// Continuous persistent stream loop: keeps the HTTP stream alive even across camera re-negotiations
@@ -364,7 +442,7 @@ func (h *CameraHandler) StreamLive(w http.ResponseWriter, r *http.Request) {
 				"-hide_banner",
 				"-loglevel", "error",
 				"-rtsp_transport", "tcp",
-				"-stimeout", "3000000",
+				"-timeout", "5000000",
 				"-fflags", "nobuffer",
 				"-flags", "low_delay",
 				"-probesize", "32768",
@@ -372,8 +450,8 @@ func (h *CameraHandler) StreamLive(w http.ResponseWriter, r *http.Request) {
 				"-i", rtspURL,
 				"-an",
 				"-c:v", "mjpeg",
-				"-q:v", "5",
-				"-r", "10",
+				"-q:v", qVal,
+				"-r", rVal,
 				"-tune", "zerolatency",
 				"-f", "mpjpeg",
 				"-boundary_tag", "ffserver",
@@ -574,4 +652,211 @@ func (h *CameraHandler) Probe(w http.ResponseWriter, r *http.Request) {
 		"existing_camera_name": existingCameraName,
 	})
 }
+
+func (h *CameraHandler) DetectAudio(w http.ResponseWriter, r *http.Request) {
+	idStr := chi.URLParam(r, "id")
+	id, err := strconv.ParseInt(idStr, 10, 64)
+	if err != nil {
+		writeJSONError(w, "Invalid camera ID", http.StatusBadRequest)
+		return
+	}
+
+	cam, err := h.db.GetCamera(id)
+	if err != nil || cam == nil {
+		writeJSONError(w, "Camera not found", http.StatusNotFound)
+		return
+	}
+
+	hasIn, hasOut, err := h.camClient.DetectAudioCapabilities(cam.IP, cam.Username, cam.Password, cam.IsISAPI)
+	if err != nil {
+		writeJSONError(w, "Failed to detect audio capabilities: "+err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	_ = h.db.UpdateCameraAudioCapabilities(cam.ID, hasIn, hasOut)
+	hasSub, _ := h.camClient.DetectStreamCapabilities(cam.IP, cam.Username, cam.Password, cam.IsISAPI)
+	_ = h.db.UpdateCameraStreamCapabilities(cam.ID, hasSub)
+
+	writeJSON(w, http.StatusOK, map[string]interface{}{
+		"success":          true,
+		"has_audio_input":  hasIn,
+		"has_audio_output": hasOut,
+		"has_sub_stream":   hasSub,
+	})
+}
+
+func (h *CameraHandler) LiveAudio(w http.ResponseWriter, r *http.Request) {
+	idStr := chi.URLParam(r, "id")
+	id, err := strconv.ParseInt(idStr, 10, 64)
+	if err != nil {
+		http.Error(w, "Invalid camera ID", http.StatusBadRequest)
+		return
+	}
+
+	cam, err := h.db.GetCamera(id)
+	if err != nil || cam == nil {
+		http.Error(w, "Camera not found", http.StatusNotFound)
+		return
+	}
+
+	if cam.IP == "" {
+		http.Error(w, "Camera IP not configured", http.StatusBadRequest)
+		return
+	}
+
+	userEsc := url.QueryEscape(cam.Username)
+	passEsc := url.QueryEscape(cam.Password)
+
+	// Stream from mainstream first as channel 101 usually includes audio
+	rtspCandidates := []string{
+		fmt.Sprintf("rtsp://%s:%s@%s:554/Streaming/Channels/101", userEsc, passEsc, cam.IP),
+		fmt.Sprintf("rtsp://%s:%s@%s:554/Streaming/channels/101", userEsc, passEsc, cam.IP),
+		fmt.Sprintf("rtsp://%s:%s@%s:554/Streaming/Channels/102", userEsc, passEsc, cam.IP),
+	}
+
+	ctx, cancel := context.WithCancel(r.Context())
+	defer cancel()
+
+	w.Header().Set("Content-Type", "audio/mpeg")
+	w.Header().Set("Cache-Control", "no-cache, no-store, must-revalidate")
+	w.Header().Set("Connection", "keep-alive")
+
+	flusher, canFlush := w.(http.Flusher)
+
+	for _, rtspURL := range rtspCandidates {
+		if ctx.Err() != nil {
+			return
+		}
+
+		cmdCtx, cancelCmd := context.WithCancel(ctx)
+		cmd := exec.CommandContext(cmdCtx, "ffmpeg",
+			"-hide_banner",
+			"-loglevel", "error",
+			"-rtsp_transport", "tcp",
+			"-timeout", "5000000",
+			"-fflags", "nobuffer",
+			"-flags", "low_delay",
+			"-probesize", "32768",
+			"-analyzeduration", "0",
+			"-i", rtspURL,
+			"-vn",
+			"-c:a", "libmp3lame",
+			"-b:a", "64k",
+			"-f", "mp3",
+			"-",
+		)
+
+		stdout, err := cmd.StdoutPipe()
+		if err != nil {
+			cancelCmd()
+			continue
+		}
+
+		if err := cmd.Start(); err != nil {
+			cancelCmd()
+			continue
+		}
+
+		buf := make([]byte, 4096)
+		streamedAny := false
+		for {
+			n, err := stdout.Read(buf)
+			if n > 0 {
+				streamedAny = true
+				if _, writeErr := w.Write(buf[:n]); writeErr != nil {
+					cancelCmd()
+					_ = cmd.Wait()
+					return
+				}
+				if canFlush {
+					flusher.Flush()
+				}
+			}
+			if err != nil {
+				break
+			}
+		}
+
+		cancelCmd()
+		_ = cmd.Wait()
+
+		if streamedAny {
+			return
+		}
+	}
+}
+
+func (h *CameraHandler) Talk(w http.ResponseWriter, r *http.Request) {
+	idStr := chi.URLParam(r, "id")
+	id, err := strconv.ParseInt(idStr, 10, 64)
+	if err != nil {
+		writeJSONError(w, "Invalid camera ID", http.StatusBadRequest)
+		return
+	}
+
+	cam, err := h.db.GetCamera(id)
+	if err != nil || cam == nil {
+		writeJSONError(w, "Camera not found", http.StatusNotFound)
+		return
+	}
+
+	if cam.IP == "" {
+		writeJSONError(w, "Camera IP not configured", http.StatusBadRequest)
+		return
+	}
+
+	// Limit to max 5MB audio data
+	r.Body = http.MaxBytesReader(w, r.Body, 5*1024*1024)
+	inputAudio, err := io.ReadAll(r.Body)
+	if err != nil {
+		writeJSONError(w, "Failed to read audio data: "+err.Error(), http.StatusBadRequest)
+		return
+	}
+	if len(inputAudio) == 0 {
+		writeJSONError(w, "Audio data is empty", http.StatusBadRequest)
+		return
+	}
+
+	// Transcode browser audio (WebM, WAV, OGG, PCM, etc.) to 8000Hz mono G.711 A-law using FFmpeg
+	cmdCtx, cancel := context.WithTimeout(r.Context(), 15*time.Second)
+	defer cancel()
+
+	cmd := exec.CommandContext(cmdCtx, "ffmpeg",
+		"-hide_banner",
+		"-loglevel", "error",
+		"-i", "pipe:0",
+		"-ar", "8000",
+		"-ac", "1",
+		"-f", "alaw",
+		"pipe:1",
+	)
+	cmd.Stdin = bytes.NewReader(inputAudio)
+	var outBuf bytes.Buffer
+	var errBuf bytes.Buffer
+	cmd.Stdout = &outBuf
+	cmd.Stderr = &errBuf
+
+	if err := cmd.Run(); err != nil {
+		writeJSONError(w, fmt.Sprintf("Failed to encode audio for camera: %v (%s)", err, errBuf.String()), http.StatusInternalServerError)
+		return
+	}
+
+	alawBytes := outBuf.Bytes()
+	if len(alawBytes) == 0 {
+		writeJSONError(w, "Transcoded audio is empty", http.StatusInternalServerError)
+		return
+	}
+
+	if err := h.camClient.SendTwoWayAudio(cam.IP, cam.Username, cam.Password, alawBytes); err != nil {
+		writeJSONError(w, fmt.Sprintf("Failed to transmit voice to camera speaker: %v", err), http.StatusBadGateway)
+		return
+	}
+
+	writeJSON(w, http.StatusOK, map[string]interface{}{
+		"success": true,
+		"bytes":   len(alawBytes),
+		"samples": len(alawBytes),
+	})
+}
+
 

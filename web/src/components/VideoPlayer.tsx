@@ -19,6 +19,7 @@ import {
   Loader2, 
   Volume2, 
   VolumeX,
+  Volume1,
   Bookmark,
   BookmarkCheck,
   ZoomIn,
@@ -27,6 +28,8 @@ import {
 import { getEventTypeInfo } from '../utils/eventType';
 
 import { LiveStreamView } from './LiveGrid';
+import { TalkButton } from './TalkButton';
+import { LiveAudioPlayer } from './LiveAudioPlayer';
 
 interface VideoPlayerProps {
   selectedCamera: Camera | null;
@@ -41,22 +44,51 @@ interface VideoPlayerProps {
   isLiveFeedPaused?: boolean;
 }
 
-const LivePlayerPreview: React.FC<{ camera: Camera; isPaused?: boolean }> = ({ camera, isPaused = false }) => {
+const LivePlayerPreview: React.FC<{
+  camera: Camera;
+  isPaused?: boolean;
+  isFullscreen?: boolean;
+}> = ({ camera, isPaused = false, isFullscreen = false }) => {
+  const [isLocalPaused, setIsLocalPaused] = useState<boolean>(false);
+  const isFeedPaused = isPaused || isLocalPaused;
+  const stream = isFullscreen ? 1 : (camera.has_sub_stream ? 2 : 1);
+
   return (
     <div className="w-full h-full relative flex items-center justify-center bg-slate-950">
       <LiveStreamView
         cameraId={camera.id}
         cameraName={camera.name}
-        isPaused={isPaused}
+        isPaused={isFeedPaused}
+        stream={stream}
         className="w-full h-full object-contain select-none"
       />
-      <div className="absolute top-3 right-3 flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-rose-500/20 border border-rose-500/40 text-[10px] font-bold text-rose-400 uppercase tracking-wider backdrop-blur-md shadow-lg pointer-events-none">
-        <span className="w-2 h-2 rounded-full bg-rose-500 animate-pulse" />
-        <span>{isPaused ? 'FEED PAUSED' : 'LIVE FEED'}</span>
-      </div>
-      <div className="absolute bottom-4 left-1/2 -translate-x-1/2 bg-slate-900/90 border border-slate-700/80 px-4 py-2 rounded-xl backdrop-blur-md shadow-xl text-slate-200 text-xs sm:text-sm flex items-center gap-2 pointer-events-none whitespace-nowrap">
-        <CameraIcon className="w-4 h-4 text-blue-400" />
-        <span>Select a recording on the timeline below to watch playback</span>
+      <button
+        type="button"
+        onClick={() => setIsLocalPaused(!isLocalPaused)}
+        title={isFeedPaused ? 'Click to resume live stream' : 'Click to pause live stream'}
+        className={`absolute top-3 right-3 flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[10px] font-bold uppercase tracking-wider backdrop-blur-md shadow-lg cursor-pointer transition-all active:scale-95 ${
+          !isFeedPaused
+            ? 'bg-rose-500/20 hover:bg-rose-500/35 border border-rose-500/40 hover:border-rose-500/60 text-rose-400 hover:text-rose-300'
+            : 'bg-slate-800/90 hover:bg-slate-700 border border-slate-700 hover:border-slate-500 text-slate-300 hover:text-white'
+        }`}
+      >
+        {!isFeedPaused ? (
+          <>
+            <span className="w-2 h-2 rounded-full bg-rose-500 animate-pulse" />
+            <span>LIVE FEED</span>
+          </>
+        ) : (
+          <>
+            <Play className="w-2.5 h-2.5 text-emerald-400 fill-current" />
+            <span>FEED PAUSED</span>
+          </>
+        )}
+      </button>
+
+      {/* Floating Bottom Prompt in Live Preview */}
+      <div className="absolute bottom-4 left-1/2 -translate-x-1/2 flex items-center gap-2 bg-slate-900/90 border border-slate-700/80 px-3.5 py-1.5 rounded-xl backdrop-blur-md shadow-2xl z-20 pointer-events-none">
+        <CameraIcon className="w-4 h-4 text-blue-400 shrink-0" />
+        <span className="text-slate-300 text-xs sm:text-sm whitespace-nowrap">Select a recording on the timeline below to watch playback</span>
       </div>
     </div>
   );
@@ -142,7 +174,39 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({
   const [hoverTime, setHoverTime] = useState<number | null>(null);
   const [hoverPosition, setHoverPosition] = useState<number>(0);
   const [isMuted, setIsMuted] = useState<boolean>(false);
+  const [volume, setVolume] = useState<number>(1);
   const [isFullscreen, setIsFullscreen] = useState<boolean>(false);
+
+  const audioCtxRef = useRef<AudioContext | null>(null);
+  const gainNodeRef = useRef<GainNode | null>(null);
+
+  // Initialize Web Audio GainNode on video element for volume boost beyond 100%
+  const initWebAudio = useCallback(() => {
+    const video = videoRef.current;
+    if (!video || gainNodeRef.current) return;
+    try {
+      const AudioCtx = window.AudioContext || (window as any).webkitAudioContext;
+      if (!AudioCtx) return;
+      const ctx = new AudioCtx();
+      const source = ctx.createMediaElementSource(video);
+      const gain = ctx.createGain();
+      source.connect(gain);
+      gain.connect(ctx.destination);
+      gain.gain.value = isMuted ? 0 : volume;
+      audioCtxRef.current = ctx;
+      gainNodeRef.current = gain;
+    } catch (e) {
+      console.warn('Web Audio gain initialization failed on video', e);
+    }
+  }, [isMuted, volume]);
+
+  useEffect(() => {
+    return () => {
+      if (audioCtxRef.current && audioCtxRef.current.state !== 'closed') {
+        audioCtxRef.current.close().catch(() => {});
+      }
+    };
+  }, []);
 
   // Fullscreen change listener
   useEffect(() => {
@@ -178,9 +242,30 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({
       video.src = url;
       video.load();
       video.playbackRate = playbackSpeed;
-      video.play().then(() => setIsPlaying(true)).catch(() => setIsPlaying(false));
+      initWebAudio();
+      if (gainNodeRef.current) {
+        gainNodeRef.current.gain.value = isMuted ? 0 : volume;
+      } else {
+        video.volume = Math.min(1, Math.max(0, volume));
+      }
+      video.muted = isMuted;
+      video.play().then(() => {
+        setIsPlaying(true);
+        if (audioCtxRef.current?.state === 'suspended') {
+          audioCtxRef.current.resume();
+        }
+      }).catch((err) => {
+        // If browser autoplay policy blocks unmuted audio, fallback to muted autoplay
+        if (err.name === 'NotAllowedError') {
+          video.muted = true;
+          setIsMuted(true);
+          video.play().then(() => setIsPlaying(true)).catch(() => setIsPlaying(false));
+        } else {
+          setIsPlaying(false);
+        }
+      });
     }
-  }, [activeSegment, resolution]);
+  }, [activeSegment, resolution, initWebAudio]);
 
   const togglePlay = useCallback(() => {
     const video = videoRef.current;
@@ -237,9 +322,34 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({
   };
 
   const toggleMute = () => {
-    if (videoRef.current) {
-      videoRef.current.muted = !videoRef.current.muted;
-      setIsMuted(videoRef.current.muted);
+    initWebAudio();
+    if (audioCtxRef.current?.state === 'suspended') {
+      audioCtxRef.current.resume();
+    }
+    const nextMuted = !isMuted;
+    setIsMuted(nextMuted);
+    if (gainNodeRef.current) {
+      gainNodeRef.current.gain.value = nextMuted ? 0 : volume;
+    } else if (videoRef.current) {
+      videoRef.current.muted = nextMuted;
+    }
+  };
+
+  const handleVolumeChange = (newVol: number) => {
+    setVolume(newVol);
+    initWebAudio();
+    if (audioCtxRef.current?.state === 'suspended') {
+      audioCtxRef.current.resume();
+    }
+    if (gainNodeRef.current) {
+      gainNodeRef.current.gain.value = isMuted ? 0 : newVol;
+    } else if (videoRef.current) {
+      videoRef.current.volume = Math.min(1, Math.max(0, newVol));
+    }
+    if (newVol > 0 && isMuted) {
+      setIsMuted(false);
+      if (videoRef.current) videoRef.current.muted = false;
+      if (gainNodeRef.current) gainNodeRef.current.gain.value = newVol;
     }
   };
 
@@ -529,7 +639,7 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({
       }`}
     >
       {/* 1. TOP HEADER (Above the video) */}
-      <div className="px-3 sm:px-4 py-2.5 bg-slate-900/90 border-b border-slate-800/80 flex items-center justify-between gap-2 shrink-0">
+      <div className="px-3 sm:px-4 py-2 sm:py-2.5 bg-slate-900/90 border-b border-slate-800/80 flex flex-col md:flex-row md:items-center justify-between gap-2 sm:gap-2.5 shrink-0">
         <div className="flex items-center gap-2 min-w-0">
           <span className="w-2.5 h-2.5 rounded-full bg-blue-500 ring-2 ring-blue-500/20 shrink-0" />
           <span className="font-semibold text-xs sm:text-sm text-white drop-shadow truncate">
@@ -548,7 +658,7 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({
         </div>
 
         {activeSegment && (
-          <div className="flex items-center gap-1.5 sm:gap-2 shrink-0">
+          <div className="flex items-center gap-1.5 sm:gap-2 flex-wrap">
             {/* Bookmark button */}
             {onOpenSaveBookmark && (
               <button
@@ -592,6 +702,32 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({
             >
               <Download className="w-3.5 h-3.5" />
             </a>
+          </div>
+        )}
+
+        {!activeSegment && selectedCamera && (
+          <div className="flex items-center gap-1.5 sm:gap-2 flex-wrap">
+            {selectedCamera.has_audio_input && (
+              <LiveAudioPlayer
+                cameraId={selectedCamera.id}
+                cameraName={selectedCamera.name}
+              />
+            )}
+            {selectedCamera.has_audio_output && (
+              <TalkButton
+                cameraId={selectedCamera.id}
+                cameraName={selectedCamera.name}
+                size="sm"
+              />
+            )}
+            <button
+              type="button"
+              onClick={handleFullscreen}
+              title={isFullscreen ? 'Exit Fullscreen (F)' : 'Fullscreen (F)'}
+              className="h-8 sm:h-9 px-2.5 rounded-xl bg-slate-900/90 hover:bg-slate-800 text-slate-200 border border-slate-700/80 transition-colors cursor-pointer flex items-center justify-center shadow-lg active:scale-95 shrink-0"
+            >
+              {isFullscreen ? <Minimize2 className="w-4 h-4" /> : <Maximize2 className="w-4 h-4" />}
+            </button>
           </div>
         )}
       </div>
@@ -667,7 +803,11 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({
             }}
           />
         ) : selectedCamera ? (
-          <LivePlayerPreview camera={selectedCamera} isPaused={isLiveFeedPaused} />
+          <LivePlayerPreview
+            camera={selectedCamera}
+            isPaused={isLiveFeedPaused}
+            isFullscreen={isFullscreen}
+          />
         ) : (
           <div className="w-full h-full flex flex-col items-center justify-center text-slate-500 gap-2 p-6 text-center">
             <CameraIcon className="w-12 h-12 text-slate-700" />
@@ -752,7 +892,7 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({
           </div>
 
           {/* Bottom Actions Row */}
-          <div className="flex items-center justify-between gap-1 sm:gap-2 flex-wrap sm:flex-nowrap">
+          <div className="flex items-center justify-between gap-1.5 sm:gap-2 flex-wrap">
             {/* Left: Previous / 10s Rewind / -1 Frame / Play / +1 Frame / 10s Forward / Next & Timers */}
             <div className="flex items-center gap-1 sm:gap-1.5 min-w-0">
               <button
@@ -853,13 +993,40 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({
                 </button>
               </div>
 
-              <button
-                onClick={toggleMute}
-                title={isMuted ? 'Unmute (M)' : 'Mute (M)'}
-                className="p-1.5 rounded-lg bg-slate-950 hover:bg-slate-800 text-slate-300 hover:text-white border border-slate-800 transition-colors"
-              >
-                {isMuted ? <VolumeX className="w-4 h-4 text-rose-400" /> : <Volume2 className="w-4 h-4" />}
-              </button>
+              <div className="flex items-center gap-1.5 bg-slate-950 border border-slate-800 rounded-lg px-2 py-1">
+                <button
+                  type="button"
+                  onClick={toggleMute}
+                  title={isMuted ? 'Unmute (M)' : 'Mute (M)'}
+                  className="p-0.5 text-slate-300 hover:text-white transition-colors cursor-pointer"
+                >
+                  {isMuted || volume === 0 ? (
+                    <VolumeX className="w-4 h-4 text-rose-400" />
+                  ) : volume < 0.5 ? (
+                    <Volume1 className="w-4 h-4 text-slate-300" />
+                  ) : (
+                    <Volume2 className="w-4 h-4 text-slate-300" />
+                  )}
+                </button>
+                <input
+                  type="range"
+                  min="0"
+                  max="2"
+                  step="0.05"
+                  value={isMuted ? 0 : volume}
+                  onChange={(e) => handleVolumeChange(parseFloat(e.target.value))}
+                  className="w-14 sm:w-20 h-1 bg-slate-700 rounded-lg appearance-none cursor-pointer accent-blue-500"
+                  title={`Volume: ${Math.round((isMuted ? 0 : volume) * 100)}%`}
+                />
+                <span
+                  className={`text-[10px] font-mono w-7 sm:w-8 text-right select-none ${
+                    volume > 1 ? 'text-amber-400 font-bold' : 'text-slate-400'
+                  }`}
+                  title={volume > 1 ? 'Audio Boosted Beyond 100%' : 'Volume Level'}
+                >
+                  {Math.round((isMuted ? 0 : volume) * 100)}%
+                </span>
+              </div>
 
               <div className="flex items-center gap-1 bg-slate-950 border border-slate-800 rounded-lg px-2 py-1 text-xs text-slate-200">
                 <Gauge className="w-3.5 h-3.5 text-blue-400 hidden sm:inline-block" />
