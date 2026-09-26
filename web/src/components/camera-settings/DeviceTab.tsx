@@ -1,13 +1,15 @@
-import React from 'react';
-import { RotateCw, ExternalLink } from 'lucide-react';
+import React, { useState } from 'react';
+import { RotateCw, ExternalLink, Mic, Volume2, Layers, RefreshCw, CheckCircle2 } from 'lucide-react';
 import type { Camera, DeviceInfo } from '../../types';
 import { getFirmwarePortalInfo } from '../../utils/firmwarePortal';
+import { api } from '../../api';
 
 interface DeviceTabProps {
   camera: Camera;
   deviceInfo: DeviceInfo | null;
   isRebooting: boolean;
   onReboot: () => void;
+  onCapabilitiesUpdated?: () => void;
 }
 
 export const DeviceTab: React.FC<DeviceTabProps> = ({
@@ -15,7 +17,31 @@ export const DeviceTab: React.FC<DeviceTabProps> = ({
   deviceInfo,
   isRebooting,
   onReboot,
+  onCapabilitiesUpdated,
 }) => {
+  const [isDetecting, setIsDetecting] = useState<boolean>(false);
+  const [detectMessage, setDetectMessage] = useState<string | null>(null);
+
+  const handleDetectCapabilities = async () => {
+    setIsDetecting(true);
+    setDetectMessage(null);
+    try {
+      const res = await api.detectAudioCapabilities(camera.id);
+      if (res.success) {
+        setDetectMessage(
+          `Capabilities updated: Speaker ${res.has_audio_output ? '✓' : '✗'}, Mic ${res.has_audio_input ? '✓' : '✗'}, Sub-stream ${res.has_sub_stream ? '✓' : '✗'}`
+        );
+        onCapabilitiesUpdated?.();
+      } else {
+        setDetectMessage('Failed to detect capabilities');
+      }
+    } catch (err: any) {
+      setDetectMessage(err.message || 'Detection failed');
+    } finally {
+      setIsDetecting(false);
+      setTimeout(() => setDetectMessage(null), 5000);
+    }
+  };
   const portalInfo = getFirmwarePortalInfo(deviceInfo?.model || camera.name);
 
   return (
@@ -73,6 +99,58 @@ export const DeviceTab: React.FC<DeviceTabProps> = ({
         <div className="p-3.5 rounded-xl bg-slate-900/80 border border-slate-800">
           <span className="text-[11px] text-slate-400 uppercase tracking-wider font-semibold block">Firmware Release Date</span>
           <span className="text-xs font-mono text-slate-300 mt-0.5 block">{deviceInfo?.firmware_released_date || 'N/A'}</span>
+        </div>
+      </div>
+
+      {/* Hardware & Audio Capabilities */}
+      <div className="p-4 rounded-xl bg-slate-900/80 border border-slate-800 space-y-3">
+        <div className="flex items-center justify-between">
+          <div>
+            <h4 className="text-xs font-semibold text-white uppercase tracking-wider">Hardware Capabilities</h4>
+            <p className="text-xs text-slate-400">Audio devices and streaming channel capabilities detected from camera.</p>
+          </div>
+          <button
+            type="button"
+            onClick={handleDetectCapabilities}
+            disabled={isDetecting}
+            className="px-3 py-1.5 bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs font-medium rounded-lg flex items-center gap-1.5 transition-colors cursor-pointer disabled:opacity-50"
+          >
+            <RefreshCw className={`w-3.5 h-3.5 ${isDetecting ? 'animate-spin text-blue-400' : ''}`} />
+            {isDetecting ? 'Detecting...' : 'Re-detect'}
+          </button>
+        </div>
+
+        {detectMessage && (
+          <div className="p-2 rounded-lg bg-emerald-950/60 border border-emerald-800 text-emerald-300 text-xs flex items-center gap-1.5">
+            <CheckCircle2 className="w-4 h-4 shrink-0" />
+            <span>{detectMessage}</span>
+          </div>
+        )}
+
+        <div className="grid grid-cols-1 sm:grid-cols-3 gap-2.5 pt-1">
+          <div className={`p-2.5 rounded-lg border flex items-center gap-2.5 ${camera.has_audio_input ? 'bg-blue-950/30 border-blue-800/60 text-blue-300' : 'bg-slate-950/40 border-slate-800 text-slate-400'}`}>
+            <Mic className={`w-4 h-4 shrink-0 ${camera.has_audio_input ? 'text-blue-400' : 'text-slate-500'}`} />
+            <div className="min-w-0">
+              <span className="text-xs font-medium block">Microphone</span>
+              <span className="text-[10px] opacity-75">{camera.has_audio_input ? 'Audio Input Available' : 'Not Detected'}</span>
+            </div>
+          </div>
+
+          <div className={`p-2.5 rounded-lg border flex items-center gap-2.5 ${camera.has_audio_output ? 'bg-emerald-950/30 border-emerald-800/60 text-emerald-300' : 'bg-slate-950/40 border-slate-800 text-slate-400'}`}>
+            <Volume2 className={`w-4 h-4 shrink-0 ${camera.has_audio_output ? 'text-emerald-400' : 'text-slate-500'}`} />
+            <div className="min-w-0">
+              <span className="text-xs font-medium block">Speaker (Talkback)</span>
+              <span className="text-[10px] opacity-75">{camera.has_audio_output ? 'Two-Way Audio Supported' : 'Not Detected'}</span>
+            </div>
+          </div>
+
+          <div className={`p-2.5 rounded-lg border flex items-center gap-2.5 ${camera.has_sub_stream ? 'bg-indigo-950/30 border-indigo-800/60 text-indigo-300' : 'bg-slate-950/40 border-slate-800 text-slate-400'}`}>
+            <Layers className={`w-4 h-4 shrink-0 ${camera.has_sub_stream ? 'text-indigo-400' : 'text-slate-500'}`} />
+            <div className="min-w-0">
+              <span className="text-xs font-medium block">Dual Stream</span>
+              <span className="text-[10px] opacity-75">{camera.has_sub_stream ? 'Sub-stream (102) Available' : 'Main-stream Only'}</span>
+            </div>
+          </div>
         </div>
       </div>
 

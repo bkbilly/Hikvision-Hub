@@ -434,6 +434,9 @@ export function App() {
         isOpen={!!deviceSettingsCamera}
         onClose={() => setDeviceSettingsCamera(null)}
         camera={deviceSettingsCamera}
+        onCameraUpdated={() => {
+          loadCameras();
+        }}
       />
 
       <ShortcutsModal

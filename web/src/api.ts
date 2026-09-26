@@ -128,7 +128,14 @@ export const api = {
     }),
 
   testConnection: (data: { ip: string; username: string; password?: string; is_isapi: boolean; camera_id?: number }) =>
-    request<{ success: boolean; message: string }>('/cameras/test-connection', {
+    request<{
+      success: boolean;
+      message: string;
+      is_isapi?: boolean;
+      has_audio_input?: boolean;
+      has_audio_output?: boolean;
+      has_sub_stream?: boolean;
+    }>('/cameras/test-connection', {
       method: 'POST',
       body: JSON.stringify(data),
     }),

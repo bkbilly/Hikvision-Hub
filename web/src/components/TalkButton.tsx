@@ -54,6 +54,23 @@ export const TalkButton: React.FC<TalkButtonProps> = ({
     setErrorMessage('');
     setTransmittedSuccess(false);
 
+    const isLocal = typeof window !== 'undefined' && (
+      window.location.hostname === 'localhost' ||
+      window.location.hostname === '127.0.0.1' ||
+      window.location.protocol === 'https:'
+    );
+
+    if (!navigator?.mediaDevices?.getUserMedia) {
+      setIsRecording(false);
+      if (!isLocal) {
+        setErrorMessage('Microphone requires HTTPS or http://localhost in browser');
+      } else {
+        setErrorMessage('Microphone access is not supported by your browser');
+      }
+      setTimeout(() => setErrorMessage(''), 5000);
+      return;
+    }
+
     try {
       const stream = await navigator.mediaDevices.getUserMedia({
         audio: {
@@ -132,12 +149,14 @@ export const TalkButton: React.FC<TalkButtonProps> = ({
       }, 1000);
     } catch (err: any) {
       setIsRecording(false);
-      setErrorMessage(
-        err.name === 'NotAllowedError'
-          ? 'Microphone permission denied in browser'
-          : err.message || 'Microphone unavailable'
-      );
-      setTimeout(() => setErrorMessage(''), 4000);
+      if (err.name === 'NotAllowedError' || err.name === 'PermissionDeniedError') {
+        setErrorMessage('Microphone access denied in browser settings');
+      } else if (!isLocal && !window.isSecureContext) {
+        setErrorMessage('Microphone requires HTTPS or localhost in your browser');
+      } else {
+        setErrorMessage(err.message || 'Microphone unavailable');
+      }
+      setTimeout(() => setErrorMessage(''), 5000);
     }
   }, [cameraId, stopRecording]);
 

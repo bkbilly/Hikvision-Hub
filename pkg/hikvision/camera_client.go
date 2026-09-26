@@ -338,7 +338,7 @@ func (c *CameraClient) DetectAudioCapabilities(ip, username, password string, is
 	hasInput := false
 	hasOutput := false
 
-	if isISAPI {
+	if username != "" {
 		// 1. Check TwoWayAudio channels (speaker / output)
 		twoWayData, code, _, err := c.DoRequest(ip, username, password, "GET", "/ISAPI/System/TwoWayAudio/channels", nil, "")
 		if err == nil && code == http.StatusOK && strings.Contains(string(twoWayData), "<TwoWayAudioChannel") {

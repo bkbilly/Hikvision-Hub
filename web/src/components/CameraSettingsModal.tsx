@@ -40,6 +40,7 @@ interface CameraSettingsModalProps {
   isOpen: boolean;
   onClose: () => void;
   camera: Camera | null;
+  onCameraUpdated?: () => void;
 }
 
 type TabType = 'device' | 'time' | 'image' | 'video' | 'events' | 'storage' | 'ptz' | 'raw';
@@ -48,6 +49,7 @@ export const CameraSettingsModal: React.FC<CameraSettingsModalProps> = ({
   isOpen,
   onClose,
   camera,
+  onCameraUpdated,
 }) => {
   const [activeTab, setActiveTab] = useState<TabType>('device');
   const [isLoading, setIsLoading] = useState<boolean>(false);
@@ -653,6 +655,7 @@ export const CameraSettingsModal: React.FC<CameraSettingsModalProps> = ({
                     deviceInfo={deviceInfo}
                     isRebooting={isRebooting}
                     onReboot={handleReboot}
+                    onCapabilitiesUpdated={onCameraUpdated}
                   />
                 </div>
               )}

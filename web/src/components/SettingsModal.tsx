@@ -21,7 +21,10 @@ import {
   ChevronDown,
   Sliders,
   Radio,
-  Sparkles
+  Sparkles,
+  Mic,
+  Volume2,
+  Layers,
 } from 'lucide-react';
 
 interface SettingsModalProps {
@@ -43,7 +46,13 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
   const [editingCamera, setEditingCamera] = useState<Partial<Camera> | null>(null);
   const [cameraPassword, setCameraPassword] = useState<string>('');
   const [showPassword, setShowPassword] = useState<boolean>(false);
-  const [testResult, setTestResult] = useState<{ success?: boolean; message?: string } | null>(null);
+  const [testResult, setTestResult] = useState<{
+    success?: boolean;
+    message?: string;
+    has_audio_input?: boolean;
+    has_audio_output?: boolean;
+    has_sub_stream?: boolean;
+  } | null>(null);
   const [isTesting, setIsTesting] = useState<boolean>(false);
   const [pathDiscovery, setPathDiscovery] = useState<{ valid?: boolean; message?: string; dirs?: any[] } | null>(null);
   const [isDiscovering, setIsDiscovering] = useState<boolean>(false);
@@ -243,6 +252,15 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
         camera_id: editingCamera.id,
       });
       setTestResult(res);
+      if (res.success) {
+        setEditingCamera((prev) => prev ? ({
+          ...prev,
+          is_isapi: res.is_isapi ?? prev.is_isapi,
+          has_audio_input: res.has_audio_input ?? prev.has_audio_input,
+          has_audio_output: res.has_audio_output ?? prev.has_audio_output,
+          has_sub_stream: res.has_sub_stream ?? prev.has_sub_stream,
+        }) : null);
+      }
     } catch (err: any) {
       setTestResult({ success: false, message: err.message || 'Test failed' });
     } finally {
@@ -640,11 +658,26 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                     </button>
 
                     {testResult && (
-                      <div className={`mt-2 p-2 rounded-lg text-xs flex items-center gap-1.5 ${
+                      <div className={`mt-2 p-2.5 rounded-lg text-xs space-y-1.5 ${
                         testResult.success ? 'bg-emerald-950/60 text-emerald-300 border border-emerald-800' : 'bg-rose-950/60 text-rose-300 border border-rose-800'
                       }`}>
-                        {testResult.success ? <CheckCircle className="w-4 h-4 shrink-0" /> : <AlertCircle className="w-4 h-4 shrink-0" />}
-                        <span>{testResult.message}</span>
+                        <div className="flex items-center gap-1.5 font-medium">
+                          {testResult.success ? <CheckCircle className="w-4 h-4 shrink-0" /> : <AlertCircle className="w-4 h-4 shrink-0" />}
+                          <span>{testResult.message}</span>
+                        </div>
+                        {testResult.success && (
+                          <div className="flex items-center gap-2 pt-1 border-t border-emerald-800/40 text-[11px] flex-wrap">
+                            <span className={`px-2 py-0.5 rounded font-mono ${testResult.has_audio_input ? 'bg-emerald-900/80 text-emerald-200 border border-emerald-700/60' : 'bg-slate-800 text-slate-400'}`}>
+                              Mic: {testResult.has_audio_input ? '✓ Yes' : '✗ None'}
+                            </span>
+                            <span className={`px-2 py-0.5 rounded font-mono ${testResult.has_audio_output ? 'bg-emerald-900/80 text-emerald-200 border border-emerald-700/60' : 'bg-slate-800 text-slate-400'}`}>
+                              Speaker (Talkback): {testResult.has_audio_output ? '✓ Yes' : '✗ None'}
+                            </span>
+                            <span className={`px-2 py-0.5 rounded font-mono ${testResult.has_sub_stream ? 'bg-emerald-900/80 text-emerald-200 border border-emerald-700/60' : 'bg-slate-800 text-slate-400'}`}>
+                              Sub-stream: {testResult.has_sub_stream ? '✓ Yes' : '✗ None'}
+                            </span>
+                          </div>
+                        )}
                       </div>
                     )}
                   </div>
@@ -796,8 +829,23 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
 
                             <div className={`w-2.5 h-2.5 rounded-full shrink-0 ${c.enabled ? 'bg-emerald-500' : 'bg-slate-600'}`} />
                             <div className="min-w-0">
-                              <div className="flex items-center gap-2">
+                              <div className="flex items-center gap-1.5 flex-wrap">
                                 <span className="font-semibold text-sm text-white truncate">{c.name}</span>
+                                {c.has_audio_input && (
+                                  <span title="Camera has microphone (audio supported)" className="p-0.5 rounded bg-blue-950/80 border border-blue-800/60 text-blue-300">
+                                    <Mic className="w-3 h-3" />
+                                  </span>
+                                )}
+                                {c.has_audio_output && (
+                                  <span title="Camera has speaker (two-way audio supported)" className="p-0.5 rounded bg-emerald-950/80 border border-emerald-800/60 text-emerald-300">
+                                    <Volume2 className="w-3 h-3" />
+                                  </span>
+                                )}
+                                {c.has_sub_stream && (
+                                  <span title="Dual-stream supported (sub-stream channel 102)" className="p-0.5 rounded bg-indigo-950/80 border border-indigo-800/60 text-indigo-300">
+                                    <Layers className="w-3 h-3" />
+                                  </span>
+                                )}
                               </div>
                               <div className="text-[11px] text-slate-400 font-mono flex items-center gap-2">
                                 <span>{c.ip}</span>
