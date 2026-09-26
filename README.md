@@ -2,6 +2,8 @@
 
 A modern, fast web interface for **Hikvision** and **HiLook** IP cameras, NAS storage, and SD card recordings.
 
+Check out the [live demo](https://bkbilly.github.io/Hikvision-Hub) to see what it looks like.
+
 ---
 
 ## ✨ Features
