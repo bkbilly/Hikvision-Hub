@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import type { Camera, CameraEvent } from '../types';
 import { api } from '../api';
+import { isDemoMode } from '../demo/demoMode';
 import { 
   RefreshCw, 
   Maximize2, 
@@ -64,6 +65,19 @@ export const LiveStreamView: React.FC<LiveStreamViewProps> = ({
     let isMounted = true;
     let reconnectTimeout: any = null;
     let retryAttempts = 0;
+
+    if (isDemoMode()) {
+      setIsOffline(false);
+      setIsReconnecting(false);
+      const interval = setInterval(() => {
+        if (!isMounted || isPaused) return;
+        setFrameSrc(api.getSnapshotUrl(cameraId));
+      }, 1000);
+      return () => {
+        isMounted = false;
+        clearInterval(interval);
+      };
+    }
 
     const connect = () => {
       if (!isMounted || isPaused) return;

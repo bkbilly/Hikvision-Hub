@@ -498,7 +498,7 @@ export const Timeline: React.FC<TimelineProps> = ({
         );
 
         return {
-          key: `${cameraId}-${seg.segment.datadir}-${seg.segment.file}-${seg.segment.videoStart}`,
+          key: `${cameraId}-${seg.segment.id || 0}-${seg.segment.start.replace(/[: ]/g, '_')}-${seg.segment.videoStart}`,
           leftPct,
           widthPct,
           isPhoto: seg.isPhoto,
@@ -565,7 +565,7 @@ export const Timeline: React.FC<TimelineProps> = ({
           const firstSeg = currentCluster.segments[0];
           const lastSeg = currentCluster.segments[count - 1];
           clusters.push({
-            key: `${cameraId}-${firstSeg.datadir}-${firstSeg.file}-${firstSeg.videoStart}-${count}`,
+            key: `${cameraId}-${firstSeg.id || 0}-${firstSeg.start.replace(/[: ]/g, '_')}-${firstSeg.videoStart}-${count}`,
             leftPct: currentCluster.leftPct,
             widthPct: Math.max(0.25, currentCluster.rightPct - currentCluster.leftPct),
             isPhoto: currentCluster.isPhoto,
@@ -594,7 +594,7 @@ export const Timeline: React.FC<TimelineProps> = ({
       const firstSeg = currentCluster.segments[0];
       const lastSeg = currentCluster.segments[count - 1];
       clusters.push({
-        key: `${cameraId}-${firstSeg.datadir}-${firstSeg.file}-${firstSeg.videoStart}-${count}`,
+        key: `${cameraId}-${firstSeg.id || 0}-${firstSeg.start.replace(/[: ]/g, '_')}-${firstSeg.videoStart}-${count}`,
         leftPct: currentCluster.leftPct,
         widthPct: Math.max(0.25, currentCluster.rightPct - currentCluster.leftPct),
         isPhoto: currentCluster.isPhoto,

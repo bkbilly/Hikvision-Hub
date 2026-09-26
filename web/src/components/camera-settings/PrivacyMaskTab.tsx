@@ -80,7 +80,10 @@ export const PrivacyMaskTab: React.FC<PrivacyMaskTabProps> = ({
     setIsLoading(true);
     try {
       const res = await api.getCameraPrivacyMask(camera.id);
-      setMask(res);
+      setMask({
+        ...res,
+        regions: res?.regions || [],
+      });
       isLoadedRef.current = true;
     } catch (err: any) {
       console.warn('privacy mask load error', err);
@@ -125,24 +128,25 @@ export const PrivacyMaskTab: React.FC<PrivacyMaskTabProps> = ({
 
   // Helper to find or create region by ID (1..4)
   const getActiveRegion = useCallback((): PrivacyMaskRegion | undefined => {
-    return mask?.regions.find((r) => r.id === activeMaskId);
+    return (mask?.regions || []).find((r) => r.id === activeMaskId);
   }, [mask, activeMaskId]);
 
   const updateActiveRegion = useCallback(
     (updater: (prev: PrivacyMaskRegion) => PrivacyMaskRegion) => {
       setMask((prev) => {
         if (!prev) return prev;
-        const exists = prev.regions.some((r) => r.id === activeMaskId);
+        const regions = prev.regions || [];
+        const exists = regions.some((r) => r.id === activeMaskId);
         let updatedRegions: PrivacyMaskRegion[];
         if (exists) {
-          updatedRegions = prev.regions.map((r) => (r.id === activeMaskId ? updater(r) : r));
+          updatedRegions = regions.map((r) => (r.id === activeMaskId ? updater(r) : r));
         } else {
           const newReg = updater({
             id: activeMaskId,
             enabled: true,
             coordinates: [],
           });
-          updatedRegions = [...prev.regions, newReg];
+          updatedRegions = [...regions, newReg];
         }
         return {
           ...prev,
@@ -158,7 +162,7 @@ export const PrivacyMaskTab: React.FC<PrivacyMaskTabProps> = ({
       if (!prev) return prev;
       return {
         ...prev,
-        regions: prev.regions.filter((r) => r.id !== id),
+        regions: (prev.regions || []).filter((r) => r.id !== id),
       };
     });
     if (drawStep) {
@@ -392,7 +396,7 @@ export const PrivacyMaskTab: React.FC<PrivacyMaskTabProps> = ({
             onPointerDown={handleSVGPointerDown}
           >
             {/* Render all configured masks */}
-            {mask?.regions.map((reg) => {
+            {(mask?.regions || []).map((reg) => {
               if (!reg.coordinates || reg.coordinates.length < 4) return null;
               const isActive = reg.id === activeMaskId;
 
@@ -586,7 +590,7 @@ export const PrivacyMaskTab: React.FC<PrivacyMaskTabProps> = ({
       <div className="flex flex-wrap items-center justify-between gap-2 p-2 rounded-xl bg-slate-900 border border-slate-800">
         <div className="flex items-center gap-1.5 overflow-x-auto py-0.5">
           {[1, 2, 3, 4].map((id) => {
-            const reg = mask?.regions.find((r) => r.id === id);
+            const reg = (mask?.regions || []).find((r) => r.id === id);
             const isConfigured = Boolean(reg?.coordinates && reg.coordinates.length >= 4);
             const isActive = activeMaskId === id;
 
@@ -654,7 +658,7 @@ export const PrivacyMaskTab: React.FC<PrivacyMaskTabProps> = ({
             </button>
           )}
 
-          {(mask?.regions.length ?? 0) > 0 && (
+          {((mask?.regions || []).length > 0) && (
             <button
               type="button"
               onClick={handleClearAll}

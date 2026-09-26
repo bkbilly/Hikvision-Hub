@@ -15,6 +15,8 @@ import { LoginModal } from './components/LoginModal';
 import { PhotoViewer } from './components/PhotoViewer';
 import { LiveEventsDrawer } from './components/LiveEventsDrawer';
 import { useLiveEvents } from './hooks/useLiveEvents';
+import { isDemoMode } from './demo/demoMode';
+import { DemoBanner } from './components/DemoBanner';
 
 export function App() {
   const [isAuthenticated, setIsAuthenticated] = useState<boolean>(!!getAuthToken());
@@ -233,7 +235,7 @@ export function App() {
     if (!isAuthenticated) return;
     try {
       const data = await api.getBookmarks();
-      setBookmarks(data || []);
+      setBookmarks(Array.isArray(data) ? data : []);
     } catch (err) {
       console.error('Failed to load bookmarks', err);
     }
@@ -322,6 +324,7 @@ export function App() {
 
   const isCurrentSegmentBookmarked = Boolean(
     activeSegment &&
+    Array.isArray(bookmarks) &&
     bookmarks.some(
       (b) =>
         b.camera_id === activeSegment.camera_id &&
@@ -333,6 +336,7 @@ export function App() {
 
   return (
     <div className="min-h-screen bg-slate-950 text-slate-100 flex flex-col font-sans">
+      {isDemoMode() && <DemoBanner />}
       <Navbar
         cameras={enabledCameras}
         selectedCamera={selectedCamera}

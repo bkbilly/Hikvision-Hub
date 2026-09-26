@@ -1,6 +1,7 @@
 import { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import type { CameraEvent } from '../types';
 import { api } from '../api';
+import { isDemoMode } from '../demo/demoMode';
 
 interface LiveEventsState {
   events: CameraEvent[];
@@ -73,6 +74,51 @@ export function useLiveEvents(enabled: boolean = true): LiveEventsState {
     fetchInitial();
 
     let isMounted = true;
+
+    if (isDemoMode()) {
+      setIsConnected(true);
+      const interval = setInterval(() => {
+        if (!isMounted) return;
+        const randomCams = [1, 2, 4];
+        const randomTypes: Array<{ type: 'motion' | 'line_crossing'; desc: string; target: string }> = [
+          { type: 'motion', desc: 'Motion detected in zone', target: 'human' },
+          { type: 'line_crossing', desc: 'Object crossed entrance line', target: 'vehicle' },
+          { type: 'motion', desc: 'Movement detected', target: 'human' },
+        ];
+        const camId = randomCams[Math.floor(Math.random() * randomCams.length)];
+        const camNames: Record<number, string> = {
+          1: 'Front Entrance',
+          2: 'Driveway & Street',
+          4: 'Living Room',
+        };
+        const evtMeta = randomTypes[Math.floor(Math.random() * randomTypes.length)];
+        const newEvt: CameraEvent = {
+          id: String(Date.now()),
+          camera_id: camId,
+          camera_name: camNames[camId] || 'Camera',
+          channel_id: 1,
+          event_type: evtMeta.type,
+          raw_type: evtMeta.type,
+          event_label: evtMeta.type === 'motion' ? 'Motion' : 'Line Crossing',
+          event_state: 'active',
+          start_time: new Date().toISOString(),
+          description: evtMeta.desc,
+        };
+        setActiveEvents((prev) => [newEvt, ...prev.slice(0, 2)]);
+        setEvents((prev) => [newEvt, ...prev.slice(0, 19)]);
+        setUnreadCount((prev) => prev + 1);
+
+        setTimeout(() => {
+          if (!isMounted) return;
+          setActiveEvents((prev) => prev.filter((e) => e.id !== newEvt.id));
+        }, 8000);
+      }, 25000);
+
+      return () => {
+        isMounted = false;
+        clearInterval(interval);
+      };
+    }
 
     const connect = () => {
       if (!isMounted || !shouldConnect) return;

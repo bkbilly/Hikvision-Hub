@@ -1,7 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { Camera, Calendar, Clock, Copy, Check, Save, Loader2, AlertCircle, Zap, Timer } from 'lucide-react';
 import { api } from '../../api';
-import type { CameraCapabilities, CaptureSettings, RecordScheduleDay } from '../../types';
+import type { CameraCapabilities, CaptureSettings, RecordSchedule, RecordScheduleDay } from '../../types';
 
 interface CaptureTabProps {
   cameraId: number;
@@ -43,9 +43,23 @@ export const CaptureTab: React.FC<CaptureTabProps> = ({
     setError(null);
     try {
       const res = await api.getCaptureSettings(cameraId);
-      if (res.schedule) {
+      const safeTiming = res?.timing_capture || {
+        enabled: false,
+        resolution: '1920*1080',
+        quality: 80,
+        interval_ms: 5000,
+      };
+      const safeEvent = res?.event_capture || {
+        enabled: false,
+        resolution: '1920*1080',
+        quality: 80,
+        interval_ms: 1000,
+        capture_count: 3,
+      };
+      let safeSchedule: RecordSchedule | undefined = res?.schedule;
+      if (safeSchedule) {
         const daysMap = new Map<number, RecordScheduleDay>();
-        (res.schedule.days || []).forEach((d) => daysMap.set(d.day_of_week, d));
+        (safeSchedule.days || []).forEach((d: RecordScheduleDay) => daysMap.set(d.day_of_week, d));
         const fullDays: RecordScheduleDay[] = [1, 2, 3, 4, 5, 6, 7].map((dayNum) => {
           return (
             daysMap.get(dayNum) || {
@@ -54,9 +68,18 @@ export const CaptureTab: React.FC<CaptureTabProps> = ({
             }
           );
         });
-        res.schedule.days = fullDays;
+        safeSchedule = {
+          ...safeSchedule,
+          days: fullDays,
+        };
       }
-      setSettings(res);
+
+      setSettings({
+        channel_id: res?.channel_id ?? cameraId,
+        timing_capture: safeTiming,
+        event_capture: safeEvent,
+        schedule: safeSchedule,
+      });
       isLoadedRef.current = true;
     } catch (err: any) {
       setError('Failed to load capture settings: ' + (err.message || 'unknown error'));
@@ -277,7 +300,7 @@ export const CaptureTab: React.FC<CaptureTabProps> = ({
           <label className="relative inline-flex items-center cursor-pointer">
             <input
               type="checkbox"
-              checked={settings.timing_capture.enabled}
+              checked={Boolean(settings?.timing_capture?.enabled)}
               onChange={(e) =>
                 setSettings({
                   ...settings,
@@ -297,7 +320,7 @@ export const CaptureTab: React.FC<CaptureTabProps> = ({
           <div className="space-y-1">
             <label className="text-xs font-medium text-slate-300">Picture Resolution</label>
             <select
-              value={settings.timing_capture.resolution || availableResolutions[0]}
+              value={settings?.timing_capture?.resolution || availableResolutions[0]}
               onChange={(e) =>
                 setSettings({
                   ...settings,
@@ -320,7 +343,7 @@ export const CaptureTab: React.FC<CaptureTabProps> = ({
           <div className="space-y-1">
             <label className="text-xs font-medium text-slate-300">Picture Quality</label>
             <select
-              value={settings.timing_capture.quality || 80}
+              value={settings?.timing_capture?.quality || 80}
               onChange={(e) =>
                 setSettings({
                   ...settings,
@@ -345,7 +368,7 @@ export const CaptureTab: React.FC<CaptureTabProps> = ({
                 type="number"
                 min="1"
                 max="86400"
-                value={Math.round((settings.timing_capture.interval_ms || 5000) / 1000)}
+                value={Math.round(((settings?.timing_capture?.interval_ms) || 5000) / 1000)}
                 onChange={(e) => {
                   const sec = parseInt(e.target.value) || 5;
                   setSettings({
@@ -380,7 +403,7 @@ export const CaptureTab: React.FC<CaptureTabProps> = ({
           <label className="relative inline-flex items-center cursor-pointer">
             <input
               type="checkbox"
-              checked={settings.event_capture.enabled}
+              checked={Boolean(settings?.event_capture?.enabled)}
               onChange={(e) =>
                 setSettings({
                   ...settings,
@@ -400,7 +423,7 @@ export const CaptureTab: React.FC<CaptureTabProps> = ({
           <div className="space-y-1">
             <label className="text-xs font-medium text-slate-300">Picture Resolution</label>
             <select
-              value={settings.event_capture.resolution || availableResolutions[0]}
+              value={settings?.event_capture?.resolution || availableResolutions[0]}
               onChange={(e) =>
                 setSettings({
                   ...settings,
@@ -423,7 +446,7 @@ export const CaptureTab: React.FC<CaptureTabProps> = ({
           <div className="space-y-1">
             <label className="text-xs font-medium text-slate-300">Picture Quality</label>
             <select
-              value={settings.event_capture.quality || 80}
+              value={settings?.event_capture?.quality || 80}
               onChange={(e) =>
                 setSettings({
                   ...settings,
@@ -449,7 +472,7 @@ export const CaptureTab: React.FC<CaptureTabProps> = ({
                 min="500"
                 max="65535"
                 step="500"
-                value={settings.event_capture.interval_ms || 1000}
+                value={settings?.event_capture?.interval_ms || 1000}
                 onChange={(e) =>
                   setSettings({
                     ...settings,
@@ -468,7 +491,7 @@ export const CaptureTab: React.FC<CaptureTabProps> = ({
           <div className="space-y-1">
             <label className="text-xs font-medium text-slate-300">Picture Count</label>
             <select
-              value={settings.event_capture.capture_count || 4}
+              value={settings?.event_capture?.capture_count || 4}
               onChange={(e) =>
                 setSettings({
                   ...settings,

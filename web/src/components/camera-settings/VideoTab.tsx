@@ -28,6 +28,7 @@ export const VideoTab: React.FC<VideoTabProps> = ({
   }
 
   const getResolutionLabel = (res: string): string => {
+    if (!res) return '';
     switch (res.toLowerCase()) {
       case '3840x2160': return '3840x2160 (4K UHD / 8MP - 16:9)';
       case '3200x1800': return '3200x1800 (6MP - 16:9)';

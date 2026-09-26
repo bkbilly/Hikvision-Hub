@@ -773,7 +773,7 @@ export const StorageTab: React.FC<StorageTabProps> = ({
           </div>
         ) : null}
 
-      {storageList.length === 0 ? (
+      {(!Array.isArray(storageList) || storageList.length === 0) ? (
         <div className="p-8 text-center bg-slate-900/40 rounded-xl border border-dashed border-slate-800">
           <HardDrive className="w-8 h-8 text-slate-600 mx-auto mb-2" />
           <p className="text-sm text-slate-400">No on-camera SD card or network NAS volumes detected.</p>
@@ -781,7 +781,7 @@ export const StorageTab: React.FC<StorageTabProps> = ({
         </div>
       ) : (
         <div className="space-y-4">
-          {storageList.map((hdd) => {
+          {(Array.isArray(storageList) ? storageList : []).map((hdd) => {
             const isNAS = hdd.type?.toLowerCase().includes('nas') ||
               hdd.type?.toLowerCase().includes('nfs') ||
               hdd.type?.toLowerCase().includes('smb') ||

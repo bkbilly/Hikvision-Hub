@@ -33,11 +33,18 @@ import type {
   CaptureSettings,
   StorageQuota,
 } from './types';
+import { isDemoMode } from './demo/demoMode';
+import { handleDemoRequest } from './demo/mockApi';
+import { generateMockSnapshotSvg, MOCK_VIDEO_SAMPLE_URL } from './demo/mockData';
 
 const API_BASE = '/api';
 
 export function getAuthToken(): string | null {
-  return localStorage.getItem('token');
+  const token = localStorage.getItem('token');
+  if (!token && isDemoMode()) {
+    return 'demo-token';
+  }
+  return token;
 }
 
 export function setAuthToken(token: string) {
@@ -49,6 +56,10 @@ export function clearAuthToken() {
 }
 
 async function request<T>(endpoint: string, options: RequestInit = {}): Promise<T> {
+  if (isDemoMode()) {
+    return handleDemoRequest<T>(endpoint, options);
+  }
+
   const token = getAuthToken();
   const headers = new Headers(options.headers || {});
   
@@ -156,12 +167,18 @@ export const api = {
     }),
 
   getSnapshotUrl: (cameraId: number, timestamp?: number) => {
+    if (isDemoMode()) {
+      return generateMockSnapshotSvg(cameraId);
+    }
     const token = getAuthToken();
     const t = timestamp || Date.now();
     return `${API_BASE}/cameras/${cameraId}/snapshot?t=${t}${token ? `&token=${encodeURIComponent(token)}` : ''}`;
   },
 
   getLiveStreamUrl: (cameraId: number, stream?: number) => {
+    if (isDemoMode()) {
+      return MOCK_VIDEO_SAMPLE_URL;
+    }
     const token = getAuthToken();
     let url = `${API_BASE}/cameras/${cameraId}/live?t=${Date.now()}`;
     if (stream) {
@@ -179,6 +196,10 @@ export const api = {
   },
 
   sendAudioToCamera: async (cameraId: number, audioBlob: Blob) => {
+    if (isDemoMode()) {
+      await new Promise((resolve) => setTimeout(resolve, 300));
+      return { success: true, bytes: audioBlob.size || 8000 };
+    }
     const token = getAuthToken();
     const headers = new Headers();
     if (token) {
@@ -230,12 +251,18 @@ export const api = {
   },
 
   getVideoUrl: (cameraId: number, datadir: number, file: number, start: number, end: number, resolution?: string) => {
+    if (isDemoMode()) {
+      return MOCK_VIDEO_SAMPLE_URL;
+    }
     const token = getAuthToken();
     const res = resolution || 'original';
     return `${API_BASE}/cameras/${cameraId}/video?datadir=${datadir}&file=${file}&start=${start}&end=${end}&resolution=${res}${token ? `&token=${encodeURIComponent(token)}` : ''}`;
   },
 
   getPictureUrl: (cameraId: number, datadir: number, file: number, start: number, end: number) => {
+    if (isDemoMode()) {
+      return generateMockSnapshotSvg(cameraId);
+    }
     const token = getAuthToken();
     return `${API_BASE}/cameras/${cameraId}/picture?datadir=${datadir}&file=${file}&start=${start}&end=${end}${token ? `&token=${encodeURIComponent(token)}` : ''}`;
   },

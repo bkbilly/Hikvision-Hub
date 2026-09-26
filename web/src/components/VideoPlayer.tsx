@@ -30,6 +30,7 @@ import { getEventTypeInfo } from '../utils/eventType';
 import { LiveStreamView } from './LiveGrid';
 import { TalkButton } from './TalkButton';
 import { LiveAudioPlayer } from './LiveAudioPlayer';
+import { isDemoMode } from '../demo/demoMode';
 
 interface VideoPlayerProps {
   selectedCamera: Camera | null;
@@ -179,6 +180,11 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({
 
   const audioCtxRef = useRef<AudioContext | null>(null);
   const gainNodeRef = useRef<GainNode | null>(null);
+  const isMutedRef = useRef<boolean>(isMuted);
+  isMutedRef.current = isMuted;
+  const volumeRef = useRef<number>(volume);
+  volumeRef.current = volume;
+  const currentClipKeyRef = useRef<string | null>(null);
 
   // Initialize Web Audio GainNode on video element for volume boost beyond 100%
   const initWebAudio = useCallback(() => {
@@ -192,13 +198,13 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({
       const gain = ctx.createGain();
       source.connect(gain);
       gain.connect(ctx.destination);
-      gain.gain.value = isMuted ? 0 : volume;
+      gain.gain.value = isMutedRef.current ? 0 : volumeRef.current;
       audioCtxRef.current = ctx;
       gainNodeRef.current = gain;
     } catch (e) {
       console.warn('Web Audio gain initialization failed on video', e);
     }
-  }, [isMuted, volume]);
+  }, []);
 
   useEffect(() => {
     return () => {
@@ -223,7 +229,17 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({
 
   // Handle active clip changes
   useEffect(() => {
-    if (!activeSegment || !selectedCamera) return;
+    if (!activeSegment || !selectedCamera) {
+      currentClipKeyRef.current = null;
+      return;
+    }
+
+    const clipKey = `${activeSegment.camera_id}_${activeSegment.datadir}_${activeSegment.file}_${activeSegment.videoStart}_${activeSegment.videoEnd}_${resolution}`;
+    if (currentClipKeyRef.current === clipKey) {
+      return;
+    }
+    currentClipKeyRef.current = clipKey;
+
     setIsLoading(true);
     setErrorMessage('');
     setCurrentTime(0);
@@ -242,16 +258,22 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({
       video.src = url;
       video.load();
       video.playbackRate = playbackSpeed;
-      initWebAudio();
-      if (gainNodeRef.current) {
-        gainNodeRef.current.gain.value = isMuted ? 0 : volume;
-      } else {
-        video.volume = Math.min(1, Math.max(0, volume));
+
+      const camHasAudio = Boolean(selectedCamera.has_audio_input);
+      if (!isDemoMode() && camHasAudio) {
+        initWebAudio();
       }
-      video.muted = isMuted;
+
+      if (gainNodeRef.current) {
+        gainNodeRef.current.gain.value = (!camHasAudio || isMutedRef.current) ? 0 : volumeRef.current;
+      } else {
+        video.volume = camHasAudio ? Math.min(1, Math.max(0, volumeRef.current)) : 0;
+      }
+      video.muted = !camHasAudio || isMutedRef.current;
+
       video.play().then(() => {
         setIsPlaying(true);
-        if (audioCtxRef.current?.state === 'suspended') {
+        if (camHasAudio && audioCtxRef.current?.state === 'suspended') {
           audioCtxRef.current.resume();
         }
       }).catch((err) => {
@@ -265,7 +287,7 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({
         }
       });
     }
-  }, [activeSegment, resolution, initWebAudio]);
+  }, [activeSegment, selectedCamera, resolution, initWebAudio]);
 
   const togglePlay = useCallback(() => {
     const video = videoRef.current;
@@ -322,7 +344,10 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({
   };
 
   const toggleMute = () => {
-    initWebAudio();
+    if (!selectedCamera?.has_audio_input) return;
+    if (!gainNodeRef.current && !isDemoMode()) {
+      initWebAudio();
+    }
     if (audioCtxRef.current?.state === 'suspended') {
       audioCtxRef.current.resume();
     }
@@ -330,20 +355,25 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({
     setIsMuted(nextMuted);
     if (gainNodeRef.current) {
       gainNodeRef.current.gain.value = nextMuted ? 0 : volume;
-    } else if (videoRef.current) {
+    }
+    if (videoRef.current) {
       videoRef.current.muted = nextMuted;
     }
   };
 
   const handleVolumeChange = (newVol: number) => {
+    if (!selectedCamera?.has_audio_input) return;
     setVolume(newVol);
-    initWebAudio();
+    if (!gainNodeRef.current && !isDemoMode()) {
+      initWebAudio();
+    }
     if (audioCtxRef.current?.state === 'suspended') {
       audioCtxRef.current.resume();
     }
     if (gainNodeRef.current) {
       gainNodeRef.current.gain.value = isMuted ? 0 : newVol;
-    } else if (videoRef.current) {
+    }
+    if (videoRef.current) {
       videoRef.current.volume = Math.min(1, Math.max(0, newVol));
     }
     if (newVol > 0 && isMuted) {
@@ -651,7 +681,7 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({
                 {getEventTypeInfo(activeSegment.record_type).label}
               </span>
               <span className="text-[10px] sm:text-xs text-blue-300 font-mono bg-blue-950/80 px-2 py-0.5 rounded border border-blue-800/60 hidden sm:inline-block shrink-0">
-                {activeSegment.start} &rarr; {activeSegment.end.split(' ')[1]}
+                {activeSegment.start} &rarr; {activeSegment.end ? (activeSegment.end.includes(' ') ? activeSegment.end.split(' ')[1] : activeSegment.end) : ''}
               </span>
             </>
           )}
@@ -696,7 +726,7 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({
             {/* Download Link */}
             <a
               href={downloadUrl}
-              download={`hikvision_clip_${activeSegment.start.replace(/[: ]/g, '_')}.mp4`}
+              download={`hikvision_clip_${(activeSegment.start || 'clip').replace(/[: ]/g, '_')}.mp4`}
               title="Download MP4 Clip"
               className="p-1.5 rounded-lg bg-slate-950 hover:bg-slate-800 text-slate-300 hover:text-white border border-slate-700/80 transition-colors"
             >
@@ -794,6 +824,16 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({
             onDurationChange={handleLoadedMetadata}
             onTimeUpdate={handleTimeUpdate}
             onError={() => {
+              if (isDemoMode() && videoRef.current) {
+                const currentSrc = videoRef.current.currentSrc || videoRef.current.src || '';
+                const fallbackUrl = 'https://interactive-examples.mdn.mozilla.net/media/cc0-videos/flower.mp4';
+                if (!currentSrc.includes('flower.mp4')) {
+                  videoRef.current.src = fallbackUrl;
+                  videoRef.current.load();
+                  videoRef.current.play().catch(() => {});
+                  return;
+                }
+              }
               setIsLoading(false);
               setErrorMessage('Unable to extract or transcode video segment. Please check camera storage path.');
             }}
@@ -993,40 +1033,43 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({
                 </button>
               </div>
 
-              <div className="flex items-center gap-1.5 bg-slate-950 border border-slate-800 rounded-lg px-2 py-1">
-                <button
-                  type="button"
-                  onClick={toggleMute}
-                  title={isMuted ? 'Unmute (M)' : 'Mute (M)'}
-                  className="p-0.5 text-slate-300 hover:text-white transition-colors cursor-pointer"
-                >
-                  {isMuted || volume === 0 ? (
-                    <VolumeX className="w-4 h-4 text-rose-400" />
-                  ) : volume < 0.5 ? (
-                    <Volume1 className="w-4 h-4 text-slate-300" />
-                  ) : (
-                    <Volume2 className="w-4 h-4 text-slate-300" />
-                  )}
-                </button>
-                <input
-                  type="range"
-                  min="0"
-                  max="2"
-                  step="0.05"
-                  value={isMuted ? 0 : volume}
-                  onChange={(e) => handleVolumeChange(parseFloat(e.target.value))}
-                  className="w-14 sm:w-20 h-1 bg-slate-700 rounded-lg appearance-none cursor-pointer accent-blue-500"
-                  title={`Volume: ${Math.round((isMuted ? 0 : volume) * 100)}%`}
-                />
-                <span
-                  className={`text-[10px] font-mono w-7 sm:w-8 text-right select-none ${
-                    volume > 1 ? 'text-amber-400 font-bold' : 'text-slate-400'
-                  }`}
-                  title={volume > 1 ? 'Audio Boosted Beyond 100%' : 'Volume Level'}
-                >
-                  {Math.round((isMuted ? 0 : volume) * 100)}%
-                </span>
-              </div>
+              {/* Volume controls - only shown if camera supports audio */}
+              {selectedCamera?.has_audio_input && (
+                <div className="flex items-center gap-1.5 bg-slate-950 border border-slate-800 rounded-lg px-2 py-1">
+                  <button
+                    type="button"
+                    onClick={toggleMute}
+                    title={isMuted ? 'Unmute (M)' : 'Mute (M)'}
+                    className="p-0.5 text-slate-300 hover:text-white transition-colors cursor-pointer"
+                  >
+                    {isMuted || volume === 0 ? (
+                      <VolumeX className="w-4 h-4 text-rose-400" />
+                    ) : volume < 0.5 ? (
+                      <Volume1 className="w-4 h-4 text-slate-300" />
+                    ) : (
+                      <Volume2 className="w-4 h-4 text-slate-300" />
+                    )}
+                  </button>
+                  <input
+                    type="range"
+                    min="0"
+                    max="2"
+                    step="0.05"
+                    value={isMuted ? 0 : volume}
+                    onChange={(e) => handleVolumeChange(parseFloat(e.target.value))}
+                    className="w-14 sm:w-20 h-1 bg-slate-700 rounded-lg appearance-none cursor-pointer accent-blue-500"
+                    title={`Volume: ${Math.round((isMuted ? 0 : volume) * 100)}%`}
+                  />
+                  <span
+                    className={`text-[10px] font-mono w-7 sm:w-8 text-right select-none ${
+                      volume > 1 ? 'text-amber-400 font-bold' : 'text-slate-400'
+                    }`}
+                    title={volume > 1 ? 'Audio Boosted Beyond 100%' : 'Volume Level'}
+                  >
+                    {Math.round((isMuted ? 0 : volume) * 100)}%
+                  </span>
+                </div>
+              )}
 
               <div className="flex items-center gap-1 bg-slate-950 border border-slate-800 rounded-lg px-2 py-1 text-xs text-slate-200">
                 <Gauge className="w-3.5 h-3.5 text-blue-400 hidden sm:inline-block" />

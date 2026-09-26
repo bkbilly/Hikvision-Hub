@@ -214,7 +214,7 @@ export const ImageTab: React.FC<ImageTabProps> = ({
               <label className="text-xs font-semibold text-slate-200">Day / Night IR Cut Filter</label>
             </div>
             <span className="text-[11px] font-mono text-amber-400 uppercase font-semibold">
-              {imageSettings.ircut_filter_type}
+              {imageSettings.ircut_filter_type || 'auto'}
             </span>
           </div>
 
@@ -225,7 +225,7 @@ export const ImageTab: React.FC<ImageTabProps> = ({
                 type="button"
                 onClick={() => setImageSettings({ ...imageSettings, ircut_filter_type: mode.id })}
                 className={`py-2 px-2.5 text-xs font-medium rounded-lg border transition-all cursor-pointer ${
-                  imageSettings.ircut_filter_type.toLowerCase() === mode.id.toLowerCase()
+                  (imageSettings.ircut_filter_type || 'auto').toLowerCase() === mode.id.toLowerCase()
                     ? 'bg-amber-600 text-white border-amber-500 shadow-md shadow-amber-600/20 font-bold'
                     : 'bg-slate-900 text-slate-300 border-slate-800 hover:border-slate-700'
                 }`}
